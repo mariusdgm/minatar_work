@@ -383,6 +383,11 @@ def play_game_visual(game):
         reward, is_terminated = env.act(action)
 
         gui.update(50, game_step_visual)
+        
+    gui.update(0, game_step_visual)
+    gui.run()
+
+    
 
 
 def main():
