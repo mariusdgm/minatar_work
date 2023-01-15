@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import torch.autograd as autograd
 
 from minatar import Environment
+from minatar.gui import GUI
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -22,6 +23,9 @@ import matplotlib.pyplot as plt
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
+
+logging.basicConfig(level=logging.INFO)
+
 
 class ReplayBuffer(object):
     def __init__(self, capacity):
@@ -53,19 +57,17 @@ class Conv_QNet(nn.Module):
 
         # conv layers
         self.features = nn.Sequential(
-            nn.Conv2d(self.in_channels, 32, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 16, kernel_size=3, stride=1),
+            nn.Conv2d(self.in_channels, 16, kernel_size=3, stride=1),
             nn.ReLU(),
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(self.feature_size(), 256),
+            nn.Linear(self.size_linear_unit(), 128),
             nn.ReLU(),
-            nn.Linear(256, self.num_actions),
+            nn.Linear(128, self.num_actions),
         )
 
-    def feature_size(self):
+    def size_linear_unit(self):
         return (
             self.features(autograd.torch.zeros(*self.in_features)).view(1, -1).size(1)
         )
@@ -92,9 +94,9 @@ def get_state(s):
 
 
 class AgentDQN:
-    def __init__(self, env, file_name, intermediary_save, load_file_path) -> None:
+    def __init__(self, env, output_file, intermediary_save, load_file_path) -> None:
 
-        self.output_file_name = file_name
+        self.output_file_name = output_file
         self.store_intermediate_result = False
 
         self.env = env
@@ -104,10 +106,10 @@ class AgentDQN:
 
         self.gamma = 0.99  # discount rate
         self.replay_buffer = ReplayBuffer(100000)
-        self.replay_start_size = 1000
+        self.replay_start_size = 5000
         self.batch_size = 32
         self.training_freq = 4
-        self.target_network_update_freq = 100
+        self.target_model_update_freq = 100
 
         # returns state as [w, h, channels]
         state_shape = env.state_shape()
@@ -128,22 +130,41 @@ class AgentDQN:
             self.policy_model.parameters(), lr=0.0000625, eps=0.00015
         )
 
-        # Set initial values related to training
+        # Set initial values related to training and monitoring
         self.e_init = 0
         self.t_init = 0
-        self.policy_net_update_counter_init = 0
+        self.policy_model_update_counter_init = 0
         self.avg_return_init = 0.0
         self.data_return_init = []
         self.frame_stamp_init = []
+        self.episode_nr_frames_init = []  # how many frames did the episode last
 
-        # TODO: implement loading mechanism
+        if load_path is not None and isinstance(load_path, str):
+            self.load_training_state(self):
 
         self.t = self.t_init
         self.e = self.e_init
 
+    def load_training_state(self, checkpoint_load_path):
+        checkpoint = torch.load(checkpoint_load_path)
+        self.policy_model.load_state_dict(checkpoint['policy_model_state_dict'])
+        self.target_model.load_state_dict(checkpoint['target_model_state_dict'])
+        self.policy_model.train()
+        self.target_model.train()
+
+        self.replay_buffer = checkpoint['replay_buffer']
+
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.e_init = checkpoint['episode']
+        self.t_init = checkpoint['frame']
+        self.policy_net_update_counter_init = checkpoint['policy_model_update_counter']
+        self.avg_return_init = checkpoint['avg_reward']
+        self.data_return_init = checkpoint['reward_per_run']
+        self.frame_stamp_init = checkpoint['frame_stamp_per_run']
+
+
     def select_action(self, state, t, num_actions):
         # A uniform random policy is run before the learning starts
-        # ASK: is this helpful?
         if t < self.replay_start_size:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
 
@@ -156,36 +177,44 @@ class AgentDQN:
                 # view(1,1) shapes the tensor to be the right form (e.g. tensor([[0]])) without copying the
                 # underlying tensor.  torch._no_grad() avoids tracking history in autograd.
                 with torch.no_grad():
-                    action = self.policy_net(state).max(1)[1].view(1, 1)
+                    action = self.get_action_from_model(state)
 
         return action
 
+    def get_action_from_model(self, state):
+        return self.policy_model(state).max(1)[1].view(1, 1)
+
     def train(self, train_episodes, episode_termination_limit):
-        data_return = self.data_return_init
+        episode_rewards = self.data_return_init
         frame_stamp = self.frame_stamp_init
-        avg_return = self.avg_return_init
+        avg_reward = self.avg_return_init
+        episode_nr_frames = self.episode_nr_frames_init
 
-        # Train for a number of frames
-
-        policy_net_update_counter = self.policy_net_update_counter_init
+        policy_model_update_counter = self.policy_model_update_counter_init
         t_start = time.time()
-        while self.t < train_episodes:
+
+        max_reward = 0
+
+        # Train for a number of episodes
+        while self.e < train_episodes:
+
             # Initialize the return for every episode (we should see this eventually increase)
-            G = 0.0
+            current_episode_reward = 0.0
+            ep_frames = 0
 
             # Initialize the environment and start state
             self.env.reset()
             s = get_state(self.env.state())
-            self.env.display_state(50)
+            # self.env.display_state(50)
 
             is_terminated = False
-            while (not is_terminated) and self.t < episode_termination_limit:
+            while (not is_terminated) and ep_frames < episode_termination_limit:
                 # Generate data
                 action = self.select_action(s, self.t, self.num_actions)
 
-                reward, terminated = self.env.act(action)
+                reward, is_terminated = self.env.act(action)
                 reward = torch.tensor([[reward]], device=device).float()
-                terminated = torch.tensor([[terminated]], device=device)
+                is_terminated = torch.tensor([[is_terminated]], device=device)
 
                 # Obtain next state
                 s_prime = get_state(self.env.state())
@@ -203,20 +232,25 @@ class AgentDQN:
 
                     # Train every n number of frames
                     if self.t % self.training_freq == 0:
-                        policy_net_update_counter += 1
+                        policy_model_update_counter += 1
                         self.learn(sample)
 
                     # Update the target network only after some number of policy network updates
                     if (
-                        policy_net_update_counter > 0
-                        and policy_net_update_counter % self.target_network_update_freq
+                        policy_model_update_counter > 0
+                        and policy_model_update_counter % self.target_model_update_freq
                         == 0
                     ):
-                        self.target_net.load_state_dict(self.policy_net.state_dict())
+                        self.target_model.load_state_dict(
+                            self.policy_model.state_dict()
+                        )
 
-                G += reward.item()
+                current_episode_reward += reward.item()
+                if current_episode_reward > max_reward:
+                    max_reward = current_episode_reward
 
                 self.t += 1
+                ep_frames += 1
 
                 # Continue the process
                 s = s_prime
@@ -225,21 +259,25 @@ class AgentDQN:
             self.e += 1
 
             # Save the return for each episode
-            data_return.append(G)
+            episode_rewards.append(current_episode_reward)
             frame_stamp.append(self.t)
+            episode_nr_frames.append(ep_frames)
 
-            # Logging exponentiated return only when verbose is turned on and only at 1000 episode intervals
-            avg_return = 0.99 * avg_return + 0.01 * G
+            # Logging only when verbose is turned on and only at 1000 episode intervals
+            avg_reward = sum(episode_rewards[-1000:]) / 1000
+            avg_episode_nr_frames = sum(episode_nr_frames[-1000:]) / 1000
             if self.e % 1000 == 0:
                 logging.info(
                     "Episode "
                     + str(self.e)
-                    + " | Return: "
-                    + str(G)
-                    + " | Avg return: "
-                    + str(np.around(avg_return, 2))
-                    + " | Frame: "
+                    + " | Max reward: "
+                    + str(max_reward)
+                    + " | Avg reward: "
+                    + str(np.around(avg_reward, 2))
+                    + " | Frames seen: "
                     + str(self.t)
+                    + " | Avg frames (episode): "
+                    + str(avg_episode_nr_frames)
                     + " | Time per frame: "
                     + str((time.time() - t_start) / self.t)
                 )
@@ -250,12 +288,12 @@ class AgentDQN:
                     {
                         "episode": self.e,
                         "frame": self.t,
-                        "policy_net_update_counter": policy_net_update_counter,
-                        "policy_net_state_dict": self.policy_net.state_dict(),
-                        "target_net_state_dict": self.target_net.state_dict(),
+                        "policy_model_update_counter": policy_model_update_counter,
+                        "policy_model_state_dict": self.policy_model.state_dict(),
+                        "target_model_state_dict": self.target_model.state_dict(),
                         "optimizer_state_dict": self.optimizer.state_dict(),
-                        "avg_return": avg_return,
-                        "return_per_run": data_return,
+                        "avg_reward": avg_reward,
+                        "reward_per_run": episode_rewards,
                         "frame_stamp_per_run": frame_stamp,
                         "replay_buffer": self.replay_buffer,
                     },
@@ -263,19 +301,20 @@ class AgentDQN:
                 )
 
         # Print final logging info
+        avg_reward = sum(episode_rewards[-1000:]) / 1000
         logging.info(
-            "Avg return: "
-            + str(np.around(avg_return, 2))
-            + " | Time per frame: "
+            "Avg reward: "
+            + str(np.around(avg_reward, 2))
+            + " | Avg time per frame: "
             + str((time.time() - t_start) / self.t)
         )
 
         # Write data to file
         torch.save(
             {
-                "returns": data_return,
+                "rewards": episode_rewards,
                 "frame_stamps": frame_stamp,
-                "policy_net_state_dict": self.policy_net.state_dict(),
+                "policy_model_state_dict": self.policy_model.state_dict(),
             },
             self.output_file_name + "_data_and_weights",
         )
@@ -291,32 +330,42 @@ class AgentDQN:
             end (float): end value of the epsilon function (x=decay_in)
             decay_in (int): how many steps to reach the end value
         """
-        return lambda x: max(
-            end, min(start, start - (start - end) * (x / decay))
-        )
+        return lambda x: max(end, min(start, start - (start - end) * (x / decay)))
 
     def learn(self, sample):
         state, action, reward, next_state, terminated = sample
 
         state = torch.from_numpy(state)
         next_state = torch.from_numpy(next_state)
-        action = torch.LongTensor(action)
-        reward = torch.FloatTensor(reward)
-        terminated = torch.FloatTensor(terminated)
+        action = torch.LongTensor(action).unsqueeze(1)
+        reward = torch.FloatTensor(reward).unsqueeze(1)
+        terminated = torch.FloatTensor(terminated).unsqueeze(1)
 
         q_value = self.policy_model(state).gather(1, action)
 
         next_q_values = self.target_model(next_state).detach()
-        next_q_value = next_q_values.max(1)[0]
-
-        expected_q_value = reward + self.gamma * next_q_value * (1 - terminated)
-        expected_q_value = torch.unsqueeze(expected_q_value, 1)
+        next_q_values = next_q_values.max(1)[0].unsqueeze(1)
+        expected_q_value = reward + self.gamma * next_q_values * (1 - terminated)
 
         loss = (q_value - expected_q_value).pow(2).mean()
+        # loss = F.smooth_l1_loss(expected_q_value, q_value)
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+def play_game_visual(game, agent):
+    
+    env = Environment(game)
+    gui = GUI(env.game_name(), env.n_channels)
+
+    def game_step_visual():
+        gui.display_state(env.state())
+
+        #One step of agent-environment interaction here
+        # Get action from model in agent
+
+        gui.update(50, game_step_visual)
 
 
 def main():
@@ -325,7 +374,7 @@ def main():
     parser.add_argument("--output", "-o", type=str)
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--loadfile", "-l", type=str)
-    parser.add_argument("--save", "-s", action="store_true", default=False)
+    parser.add_argument("--save", "-s", action="store_true", default=True)
     args = parser.parse_args()
 
     if args.verbose:
@@ -336,12 +385,11 @@ def main():
     else:
         game = "breakout"
 
-    # If there's an output specified, then use the user specified output. Otherwise, create file in the current
-    # directory with the game's name.
     if args.output:
         file_name = args.output
     else:
-        file_name = os.getcwd() + "/" + game
+        proj_dir = os.path.dirname(os.path.abspath(__file__))
+        file_name = os.path.join(proj_dir, game)
 
     load_file_path = None
     if args.loadfile:
@@ -349,9 +397,9 @@ def main():
 
     env = Environment(game)
 
-    print("Cuda available?: " + str(torch.cuda.is_available()))
+    # print("Cuda available?: " + str(torch.cuda.is_available()))
     my_agent = AgentDQN(env, file_name, args.save, load_file_path)
-    my_agent.train(train_episodes=10, episode_termination_limit=10000)
+    my_agent.train(train_episodes=10, episode_termination_limit=100000)
 
 
 if __name__ == "__main__":
