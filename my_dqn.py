@@ -5,6 +5,7 @@ import numpy as np
 import copy
 import logging
 import os
+from pathlib import Path
 import argparse
 from collections import deque, Counter, namedtuple
 
@@ -94,10 +95,14 @@ def get_state(s):
 
 
 class AgentDQN:
-    def __init__(self, env, output_file, intermediary_save, load_file_path) -> None:
+    def __init__(
+        self, env=None, output_file=None, intermediary_save=False, load_file_path=None
+    ) -> None:
 
         self.output_file_name = output_file
-        self.store_intermediate_result = False
+
+        self.store_intermediate_result = intermediary_save
+        self.checkpoint_file_name = load_file_path
 
         self.env = env
         self.epsilon_by_frame = self._get_linear_decay_function(
@@ -131,37 +136,39 @@ class AgentDQN:
         )
 
         # Set initial values related to training and monitoring
-        self.e_init = 0
-        self.t_init = 0
+        self.e = 0  # episode nr
+        self.t = 0  # frame nr
         self.policy_model_update_counter_init = 0
         self.avg_return_init = 0.0
         self.data_return_init = []
         self.frame_stamp_init = []
         self.episode_nr_frames_init = []  # how many frames did the episode last
 
-        if load_path is not None and isinstance(load_path, str):
-            self.load_training_state(self):
-
-        self.t = self.t_init
-        self.e = self.e_init
+        if self.checkpoint_file_name is not None and os.path.exists(
+            self.checkpoint_file_name
+        ):
+            self.load_training_state(self.checkpoint_file_name)
 
     def load_training_state(self, checkpoint_load_path):
         checkpoint = torch.load(checkpoint_load_path)
-        self.policy_model.load_state_dict(checkpoint['policy_model_state_dict'])
-        self.target_model.load_state_dict(checkpoint['target_model_state_dict'])
+        self.policy_model.load_state_dict(checkpoint["policy_model_state_dict"])
+        self.target_model.load_state_dict(checkpoint["target_model_state_dict"])
         self.policy_model.train()
         self.target_model.train()
 
-        self.replay_buffer = checkpoint['replay_buffer']
+        self.replay_buffer = checkpoint["replay_buffer"]
 
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.e_init = checkpoint['episode']
-        self.t_init = checkpoint['frame']
-        self.policy_net_update_counter_init = checkpoint['policy_model_update_counter']
-        self.avg_return_init = checkpoint['avg_reward']
-        self.data_return_init = checkpoint['reward_per_run']
-        self.frame_stamp_init = checkpoint['frame_stamp_per_run']
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.e = checkpoint["episode"]
+        self.t = checkpoint["frame"]
+        self.policy_net_update_counter_init = checkpoint["policy_model_update_counter"]
+        self.avg_return_init = checkpoint["avg_reward"]
+        self.data_return_init = checkpoint["reward_per_run"]
+        self.frame_stamp_init = checkpoint["frame_stamp_per_run"]
 
+    def load_policy_model(self, model_path):
+        model_data = torch.load(model_path)
+        self.policy_model.load_state_dict(model_data["policy_model_state_dict"])
 
     def select_action(self, state, t, num_actions):
         # A uniform random policy is run before the learning starts
@@ -197,7 +204,6 @@ class AgentDQN:
 
         # Train for a number of episodes
         while self.e < train_episodes:
-
             # Initialize the return for every episode (we should see this eventually increase)
             current_episode_reward = 0.0
             ep_frames = 0
@@ -205,7 +211,6 @@ class AgentDQN:
             # Initialize the environment and start state
             self.env.reset()
             s = get_state(self.env.state())
-            # self.env.display_state(50)
 
             is_terminated = False
             while (not is_terminated) and ep_frames < episode_termination_limit:
@@ -297,7 +302,7 @@ class AgentDQN:
                         "frame_stamp_per_run": frame_stamp,
                         "replay_buffer": self.replay_buffer,
                     },
-                    self.output_file_name + "_checkpoint",
+                    self.checkpoint_file_name,
                 )
 
         # Print final logging info
@@ -316,7 +321,7 @@ class AgentDQN:
                 "frame_stamps": frame_stamp,
                 "policy_model_state_dict": self.policy_model.state_dict(),
             },
-            self.output_file_name + "_data_and_weights",
+            self.output_file_name,
         )
 
     def _get_exp_decay_function(self, start, end, decay):
@@ -354,16 +359,28 @@ class AgentDQN:
         loss.backward()
         self.optimizer.step()
 
-def play_game_visual(game, agent):
-    
+
+def play_game_visual(game):
+
     env = Environment(game)
+    agent = AgentDQN(env=env)
+
+    proj_dir = os.path.dirname(os.path.abspath(__file__))
+    default_save_folder = os.path.join(proj_dir, game)
+    file_name = os.path.join(default_save_folder, game + "_model")
+
+    agent.load_policy_model(file_name)
+
     gui = GUI(env.game_name(), env.n_channels)
+
+    env.reset()
+    s = get_state(env.state())
 
     def game_step_visual():
         gui.display_state(env.state())
 
-        #One step of agent-environment interaction here
-        # Get action from model in agent
+        action = agent.get_action_from_model(s)
+        reward, is_terminated = env.act(action)
 
         gui.update(50, game_step_visual)
 
@@ -385,22 +402,31 @@ def main():
     else:
         game = "breakout"
 
+    proj_dir = os.path.dirname(os.path.abspath(__file__))
+    default_save_folder = os.path.join(proj_dir, game)
+
     if args.output:
         file_name = args.output
     else:
-        proj_dir = os.path.dirname(os.path.abspath(__file__))
-        file_name = os.path.join(proj_dir, game)
+        file_name = os.path.join(default_save_folder, game + "_model")
 
-    load_file_path = None
     if args.loadfile:
         load_file_path = args.loadfile
+    else:
+        load_file_path = os.path.join(default_save_folder, game + "_checkpoint")
+
+    if not args.output or not args.loadfile:
+        Path(default_save_folder).mkdir(parents=True, exist_ok=True)
 
     env = Environment(game)
 
     # print("Cuda available?: " + str(torch.cuda.is_available()))
     my_agent = AgentDQN(env, file_name, args.save, load_file_path)
-    my_agent.train(train_episodes=10, episode_termination_limit=100000)
+    my_agent.train(train_episodes=2000, episode_termination_limit=100000)
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    play_game_visual("breakout")
+
