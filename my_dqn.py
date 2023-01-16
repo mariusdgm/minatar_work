@@ -20,6 +20,7 @@ from minatar.gui import GUI
 
 import seaborn as sns
 import matplotlib.pyplot as plt
+import tkinter as Tk
 
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -269,9 +270,9 @@ class AgentDQN:
             episode_nr_frames.append(ep_frames)
 
             # Logging only when verbose is turned on and only at 1000 episode intervals
-            avg_reward = sum(episode_rewards[-1000:]) / 1000
-            avg_episode_nr_frames = sum(episode_nr_frames[-1000:]) / 1000
             if self.e % 1000 == 0:
+                avg_reward = sum(episode_rewards[-1000:]) / 1000
+                avg_episode_nr_frames = sum(episode_nr_frames[-1000:]) / 1000
                 logging.info(
                     "Episode "
                     + str(self.e)
@@ -374,16 +375,35 @@ def play_game_visual(game):
     gui = GUI(env.game_name(), env.n_channels)
 
     env.reset()
-    s = get_state(env.state())
+
+    is_terminate = Tk.BooleanVar()
+    is_terminate.set(False)
+
+    game_reward = Tk.DoubleVar()
+    game_reward.set(0.0)
 
     def game_step_visual():
+        
+        if is_terminate.get() == True:
+            print("Final Game score: ", str(game_reward.get()))
+            time.sleep(3)
+            game_reward.set(0.0)
+            is_terminate.set(False)
+            env.reset()
+
         gui.display_state(env.state())
 
-        action = agent.get_action_from_model(s)
+        state = get_state(env.state())
+        action = agent.get_action_from_model(state)
         reward, is_terminated = env.act(action)
 
+        game_reward.set(game_reward.get()+reward)
+
+        if is_terminated:
+            is_terminate.set(True)
+
         gui.update(50, game_step_visual)
-        
+
     gui.update(0, game_step_visual)
     gui.run()
 
@@ -427,7 +447,7 @@ def main():
 
     # print("Cuda available?: " + str(torch.cuda.is_available()))
     my_agent = AgentDQN(env, file_name, args.save, load_file_path)
-    my_agent.train(train_episodes=2000, episode_termination_limit=100000)
+    my_agent.train(train_episodes=20000, episode_termination_limit=100000)
 
 
 if __name__ == "__main__":
