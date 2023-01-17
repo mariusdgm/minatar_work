@@ -139,11 +139,11 @@ class AgentDQN:
         # Set initial values related to training and monitoring
         self.e = 0  # episode nr
         self.t = 0  # frame nr
-        self.policy_model_update_counter_init = 0
-        self.avg_return_init = 0.0
-        self.data_return_init = []
-        self.frame_stamp_init = []
-        self.episode_nr_frames_init = []  # how many frames did the episode last
+        self.policy_model_update_counter = 0
+
+        self.data_return = []
+        self.frame_stamp = []
+        self.episode_nr_frames = []  # how many frames did the episode last
 
         if self.checkpoint_file_name is not None and os.path.exists(
             self.checkpoint_file_name
@@ -162,10 +162,10 @@ class AgentDQN:
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.e = checkpoint["episode"]
         self.t = checkpoint["frame"]
-        self.policy_net_update_counter_init = checkpoint["policy_model_update_counter"]
-        self.avg_return_init = checkpoint["avg_reward"]
-        self.data_return_init = checkpoint["reward_per_run"]
-        self.frame_stamp_init = checkpoint["frame_stamp_per_run"]
+        self.policy_model_update_counter = checkpoint["policy_model_update_counter"]
+        self.episode_rewards = checkpoint["reward_per_run"]
+        self.episode_nr_frames = checkpoint["episode_nr_frames"]
+        self.frame_stamp = checkpoint["frame_stamp_per_run"]
 
     def load_policy_model(self, model_path):
         model_data = torch.load(model_path)
@@ -193,12 +193,7 @@ class AgentDQN:
         return self.policy_model(state).max(1)[1].view(1, 1)
 
     def train(self, train_episodes, episode_termination_limit):
-        episode_rewards = self.data_return_init
-        frame_stamp = self.frame_stamp_init
-        avg_reward = self.avg_return_init
-        episode_nr_frames = self.episode_nr_frames_init
 
-        policy_model_update_counter = self.policy_model_update_counter_init
         t_start = time.time()
 
         max_reward = 0
@@ -238,13 +233,14 @@ class AgentDQN:
 
                     # Train every n number of frames
                     if self.t % self.training_freq == 0:
-                        policy_model_update_counter += 1
+                        self.policy_model_update_counter += 1
                         self.learn(sample)
 
                     # Update the target network only after some number of policy network updates
                     if (
-                        policy_model_update_counter > 0
-                        and policy_model_update_counter % self.target_model_update_freq
+                        self.policy_model_update_counter > 0
+                        and self.policy_model_update_counter
+                        % self.target_model_update_freq
                         == 0
                     ):
                         self.target_model.load_state_dict(
@@ -265,64 +261,63 @@ class AgentDQN:
             self.e += 1
 
             # Save the return for each episode
-            episode_rewards.append(current_episode_reward)
-            frame_stamp.append(self.t)
-            episode_nr_frames.append(ep_frames)
+            self.episode_rewards.append(current_episode_reward)
+            self.frame_stamp.append(self.t)
+            self.episode_nr_frames.append(ep_frames)
 
             # Logging only when verbose is turned on and only at 1000 episode intervals
             if self.e % 1000 == 0:
-                avg_reward = sum(episode_rewards[-1000:]) / 1000
-                avg_episode_nr_frames = sum(episode_nr_frames[-1000:]) / 1000
-                logging.info(
-                    "Episode "
-                    + str(self.e)
-                    + " | Max reward: "
-                    + str(max_reward)
-                    + " | Avg reward: "
-                    + str(np.around(avg_reward, 2))
-                    + " | Frames seen: "
-                    + str(self.t)
-                    + " | Avg frames (episode): "
-                    + str(avg_episode_nr_frames)
-                    + " | Time per frame: "
-                    + str((time.time() - t_start) / self.t)
-                )
+                self.log_training_info(1000)
 
-            # Save model data and other intermediate data if the corresponding flag is true
-            if self.store_intermediate_result and self.e % 1000 == 0:
-                torch.save(
-                    {
-                        "episode": self.e,
-                        "frame": self.t,
-                        "policy_model_update_counter": policy_model_update_counter,
-                        "policy_model_state_dict": self.policy_model.state_dict(),
-                        "target_model_state_dict": self.target_model.state_dict(),
-                        "optimizer_state_dict": self.optimizer.state_dict(),
-                        "avg_reward": avg_reward,
-                        "reward_per_run": episode_rewards,
-                        "frame_stamp_per_run": frame_stamp,
-                        "replay_buffer": self.replay_buffer,
-                    },
-                    self.checkpoint_file_name,
-                )
+                if self.store_intermediate_result:
+                    self.save_training_status(self.checkpoint_file_name)
 
         # Print final logging info
-        avg_reward = sum(episode_rewards[-1000:]) / 1000
+        self.log_training_info(1000)
+
+        # Write data to file
+        self.save_training_status(
+            self.output_file_name,
+        )
+
+    def log_training_info(self, last_n):
+        avg_reward = sum(self.episode_rewards[-last_n:]) / len(
+            self.episode_rewards[-last_n:]
+        )
+        max_reward = max(self.episode_rewards[-last_n:])
+        avg_episode_nr_frames = sum(self.episode_nr_frames[-last_n:]) / len(
+            self.episode_nr_frames[-last_n:]
+        )
         logging.info(
-            "Avg reward: "
+            "Episode "
+            + str(self.e)
+            + " | Max reward: "
+            + str(max_reward)
+            + " | Avg reward: "
             + str(np.around(avg_reward, 2))
-            + " | Avg time per frame: "
+            + " | Frames seen: "
+            + str(self.t)
+            + " | Avg frames (episode): "
+            + str(avg_episode_nr_frames)
+            + " | Time per frame: "
             + str((time.time() - t_start) / self.t)
         )
 
-        # Write data to file
+    def save_training_status(self, save_file_name):
         torch.save(
             {
-                "rewards": episode_rewards,
-                "frame_stamps": frame_stamp,
+                "episode": self.e,
+                "frame": self.t,
+                "policy_model_update_counter": self.policy_model_update_counter,
                 "policy_model_state_dict": self.policy_model.state_dict(),
+                "target_model_state_dict": self.target_model.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "reward_per_run": self.episode_rewards,
+                "frame_stamp_per_run": self.frame_stamp,
+                "episode_nr_frames": self.episode_nr_frames,
+                "replay_buffer": self.replay_buffer,
             },
-            self.output_file_name,
+            save_file_name,
         )
 
     def _get_exp_decay_function(self, start, end, decay):
@@ -383,7 +378,7 @@ def play_game_visual(game):
     game_reward.set(0.0)
 
     def game_step_visual():
-        
+
         if is_terminate.get() == True:
             print("Final Game score: ", str(game_reward.get()))
             time.sleep(3)
@@ -397,7 +392,7 @@ def play_game_visual(game):
         action = agent.get_action_from_model(state)
         reward, is_terminated = env.act(action)
 
-        game_reward.set(game_reward.get()+reward)
+        game_reward.set(game_reward.get() + reward)
 
         if is_terminated:
             is_terminate.set(True)
@@ -406,8 +401,6 @@ def play_game_visual(game):
 
     gui.update(0, game_step_visual)
     gui.run()
-
-    
 
 
 def main():
@@ -454,4 +447,3 @@ if __name__ == "__main__":
     # main()
 
     play_game_visual("breakout")
-
