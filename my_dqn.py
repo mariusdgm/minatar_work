@@ -294,14 +294,14 @@ class AgentDQN:
             self.episode_nr_frames[-last_n:]
         )
         logging.info(
-            "Episode "
+            "Frames seen: "
+            + str(self.t)
+            + " | Episode: "
             + str(self.e)
             + " | Max reward: "
             + str(max_reward)
             + " | Avg reward: "
             + str(np.around(avg_reward, 2))
-            + " | Frames seen: "
-            + str(self.t)
             + " | Avg frames (episode): "
             + str(avg_episode_nr_frames)
             + " | Time per frame: "
