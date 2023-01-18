@@ -1,3 +1,7 @@
+# TODO: add 2/3 training, 1/3 validation with frozen epsilon (validation done with small epsilon)
+# save maximum Q value
+# TODO change e counter usage to frame counter
+
 import time
 import torch
 import random
@@ -97,25 +101,26 @@ def get_state(s):
 
 class AgentDQN:
     def __init__(
-        self, env=None, output_file=None, intermediary_save=False, load_file_path=None
+        self, env=None, output_file=None, checkpoints=False, load_file_path=None
     ) -> None:
 
         self.output_file_name = output_file
 
-        self.store_intermediate_result = intermediary_save
+        self.store_intermediate_result = checkpoints
         self.checkpoint_file_name = load_file_path
 
         self.env = env
         self.epsilon_by_frame = self._get_linear_decay_function(
-            start=1.0, end=0.01, decay=100000
+            start=1.0, end=0.01, decay=250_000
         )
 
         self.gamma = 0.99  # discount rate
-        self.replay_buffer = ReplayBuffer(100000)
+        self.replay_buffer = ReplayBuffer(100_000)
         self.replay_start_size = 5000
         self.batch_size = 32
         self.training_freq = 4
         self.target_model_update_freq = 100
+        self.validation_epslion = 0.001
 
         # returns state as [w, h, channels]
         state_shape = env.state_shape()
@@ -137,13 +142,13 @@ class AgentDQN:
         )
 
         # Set initial values related to training and monitoring
-        self.e = 0  # episode nr
+        self.t_start = None
         self.t = 0  # frame nr
+        self.e = 0  # episode nr
         self.policy_model_update_counter = 0
-
-        self.data_return = []
-        self.frame_stamp = []
+        self.episode_rewards = []
         self.episode_nr_frames = []  # how many frames did the episode last
+        self.frame_stamp = []
 
         if self.checkpoint_file_name is not None and os.path.exists(
             self.checkpoint_file_name
@@ -156,50 +161,51 @@ class AgentDQN:
         self.target_model.load_state_dict(checkpoint["target_model_state_dict"])
         self.policy_model.train()
         self.target_model.train()
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
         self.replay_buffer = checkpoint["replay_buffer"]
-
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        self.e = checkpoint["episode"]
         self.t = checkpoint["frame"]
+        self.e = checkpoint["episode"]
         self.policy_model_update_counter = checkpoint["policy_model_update_counter"]
-        self.episode_rewards = checkpoint["reward_per_run"]
+        self.episode_rewards = checkpoint["episode_rewards"]
         self.episode_nr_frames = checkpoint["episode_nr_frames"]
-        self.frame_stamp = checkpoint["frame_stamp_per_run"]
+        self.frame_stamp = checkpoint["frame_stamp"]
 
     def load_policy_model(self, model_path):
         model_data = torch.load(model_path)
         self.policy_model.load_state_dict(model_data["policy_model_state_dict"])
 
-    def select_action(self, state, t, num_actions):
-        # A uniform random policy is run before the learning starts
-        if t < self.replay_start_size:
+    def select_action(self, state, t, num_actions, epsilon=None, random_action=False):
+        # A uniform random policy
+        if random_action:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
+            return action
 
-        else:
-            # Epsilon-greedy behavior policy for action selection
+        # Epsilon-greedy behavior policy for action selection
+        if not epsilon:
             epsilon = self.epsilon_by_frame(t - self.replay_start_size)
-            if np.random.binomial(1, epsilon) == 1:
-                action = torch.tensor([[random.randrange(num_actions)]], device=device)
-            else:
-                # view(1,1) shapes the tensor to be the right form (e.g. tensor([[0]])) without copying the
-                # underlying tensor.  torch._no_grad() avoids tracking history in autograd.
-                with torch.no_grad():
-                    action = self.get_action_from_model(state)
+
+        if np.random.binomial(1, epsilon) == 1:
+            action = torch.tensor([[random.randrange(num_actions)]], device=device)
+        else:
+            # view(1,1) shapes the tensor to be the right form (e.g. tensor([[0]])) without copying the
+            # underlying tensor.  torch._no_grad() avoids tracking history in autograd.
+            with torch.no_grad():
+                action = self.get_action_from_model(state)
 
         return action
 
     def get_action_from_model(self, state):
         return self.policy_model(state).max(1)[1].view(1, 1)
 
-    def train(self, train_episodes, episode_termination_limit):
+    def train(self, train_frames, episode_termination_limit):
 
-        t_start = time.time()
+        self.t_start = time.time()
 
         max_reward = 0
 
         # Train for a number of episodes
-        while self.e < train_episodes:
+        while self.t < train_frames:
             # Initialize the return for every episode (we should see this eventually increase)
             current_episode_reward = 0.0
             ep_frames = 0
@@ -228,11 +234,10 @@ class AgentDQN:
                     self.t > self.replay_start_size
                     and len(self.replay_buffer) >= self.batch_size
                 ):
-                    # Sample a batch
-                    sample = self.replay_buffer.sample(self.batch_size)
 
                     # Train every n number of frames
                     if self.t % self.training_freq == 0:
+                        sample = self.replay_buffer.sample(self.batch_size)
                         self.policy_model_update_counter += 1
                         self.learn(sample)
 
@@ -260,12 +265,12 @@ class AgentDQN:
             # Increment the episodes
             self.e += 1
 
-            # Save the return for each episode
+            # Save episode stats
             self.episode_rewards.append(current_episode_reward)
             self.frame_stamp.append(self.t)
             self.episode_nr_frames.append(ep_frames)
 
-            # Logging only when verbose is turned on and only at 1000 episode intervals
+            # Logging training progress
             if self.e % 1000 == 0:
                 self.log_training_info(1000)
 
@@ -300,22 +305,22 @@ class AgentDQN:
             + " | Avg frames (episode): "
             + str(avg_episode_nr_frames)
             + " | Time per frame: "
-            + str((time.time() - t_start) / self.t)
+            + str((time.time() - self.t_start) / self.t)
         )
 
     def save_training_status(self, save_file_name):
         torch.save(
             {
-                "episode": self.e,
-                "frame": self.t,
-                "policy_model_update_counter": self.policy_model_update_counter,
                 "policy_model_state_dict": self.policy_model.state_dict(),
                 "target_model_state_dict": self.target_model.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
-                "reward_per_run": self.episode_rewards,
-                "frame_stamp_per_run": self.frame_stamp,
-                "episode_nr_frames": self.episode_nr_frames,
                 "replay_buffer": self.replay_buffer,
+                "frame": self.t,
+                "episode": self.e,
+                "policy_model_update_counter": self.policy_model_update_counter,
+                "episode_rewards": self.episode_rewards,
+                "episode_nr_frames": self.episode_nr_frames,
+                "frame_stamp": self.frame_stamp,
             },
             save_file_name,
         )
@@ -348,8 +353,8 @@ class AgentDQN:
         next_q_values = next_q_values.max(1)[0].unsqueeze(1)
         expected_q_value = reward + self.gamma * next_q_values * (1 - terminated)
 
-        loss = (q_value - expected_q_value).pow(2).mean()
-        # loss = F.smooth_l1_loss(expected_q_value, q_value)
+        loss = F.mse_loss(q_value, expected_q_value)
+        # loss = F.smooth_l1_loss(q_value, expected_q_value)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -440,10 +445,10 @@ def main():
 
     # print("Cuda available?: " + str(torch.cuda.is_available()))
     my_agent = AgentDQN(env, file_name, args.save, load_file_path)
-    my_agent.train(train_episodes=20000, episode_termination_limit=100000)
+    my_agent.train(train_frames=20_000_000, episode_termination_limit=100_000)
 
 
 if __name__ == "__main__":
-    # main()
+    main()
 
-    play_game_visual("breakout")
+    # play_game_visual("breakout")
