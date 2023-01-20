@@ -1,11 +1,13 @@
-# TODO: add 2/3 training, 1/3 validation with frozen epsilon (validation done with small epsilon)
-# save maximum Q value (question? check q validation during validation, right?)
+# save maximum Q value in training , loss
 
-# q: should add environment seed? What about torch-deterministic
-# q: do you use wandb?
-# q: epoch? is it number of trainings? better than using number of frames?
+# q: should add environment seed? What about torch-deterministic -> yes, enable this, log it but don't always use the same one
+# q: do you use wandb? -> maybe, not now
+# q: epoch? -> use this
+# TODO: split progress saving into logging, checkpoint, replay buffer (don't save replay buffer like this, split)
+
 
 import time
+import datetime
 import torch
 import random
 import numpy as np
@@ -33,7 +35,11 @@ import tkinter as Tk
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s -%(message)s",
+    datefmt="%H:%M:%S",
+)
 
 
 class ReplayBuffer(object):
@@ -104,7 +110,7 @@ def get_state(s):
 
 class AgentDQN:
     def __init__(
-        self, env=None, output_file=None, checkpoints=False, load_file_path=None
+        self, env=None, output_file=None, checkpoints=True, load_file_path=None
     ) -> None:
 
         self.output_file_name = output_file
@@ -127,7 +133,8 @@ class AgentDQN:
         self.target_model_update_freq = 100
 
         self.validation_enabled = True
-        self.validation_step_cnt = 125_000
+        self.validation_step_cnt = 100_000
+
         self.validation_epslion = 0.001
 
         # returns state as [w, h, channels]
@@ -159,6 +166,7 @@ class AgentDQN:
 
         self.val_avg_episode_rewards = []
         self.val_avg_episode_nr_frames = []
+        self.val_log_frame_stamp = []
 
         self.reset_episode_training_logs()
 
@@ -202,6 +210,7 @@ class AgentDQN:
 
         self.val_avg_episode_rewards = checkpoint["val_avg_episode_rewards"]
         self.val_avg_episode_nr_frames = checkpoint["val_avg_episode_nr_frames"]
+        self.val_log_frame_stamp = checkpoint["val_avg_episode_nr_frames"]
 
     def load_policy_model(self, model_path):
         model_data = torch.load(model_path)
@@ -231,6 +240,7 @@ class AgentDQN:
         return self.policy_model(state).max(1)[1].view(1, 1)
 
     def train(self, train_frames, episode_termination_limit):
+        logging.info(f"Starting/resuming training at: {self.t}")
 
         # Train for a number of episodes
         while self.t < train_frames:
@@ -246,9 +256,16 @@ class AgentDQN:
             if (
                 self.validation_enabled
                 and (self.t % self.train_step_cnt == 0)
-                and (self.t != 0)
+                and (
+                    self.t
+                    > (
+                        0
+                        if not self.val_log_frame_stamp
+                        else self.val_log_frame_stamp[-1]
+                    )
+                )  # check if this validation was already done
             ):
-                logging.info(f"Starting validation at: {self.t}")
+                logging.info(f"Starting validation at t = {self.t}")
 
                 # start a validation sequence
                 max_ep_reward, avg_ep_reward, avg_ep_nr_frames = self.validate_model(
@@ -258,7 +275,6 @@ class AgentDQN:
 
                 if self.store_intermediate_result:
                     self.save_training_status(self.checkpoint_file_name)
-
 
         # Print final logging info
         self.log_training_info()
@@ -271,7 +287,8 @@ class AgentDQN:
     def validate_model(self, episode_termination_limit):
         local_val_avg_episode_rewards = []
         local_val_avg_episode_nr_frames = []
-        for i in range(self.validation_step_cnt):
+        valiation_t = 0
+        while valiation_t < self.validation_step_cnt:
             current_episode_reward = 0.0
             ep_frames = 0
 
@@ -280,7 +297,11 @@ class AgentDQN:
             s = get_state(self.env.state())
 
             is_terminated = False
-            while (not is_terminated) and ep_frames < episode_termination_limit:
+            while (
+                (not is_terminated)
+                and ep_frames < episode_termination_limit
+                and valiation_t < self.validation_step_cnt
+            ):
                 action = self.select_action(
                     s, self.t, self.num_actions, epsilon=self.validation_epslion
                 )
@@ -290,23 +311,26 @@ class AgentDQN:
                 s_prime = get_state(self.env.state())
 
                 current_episode_reward += reward.item()
-
                 ep_frames += 1
 
                 # Continue the process
                 s = s_prime
+                valiation_t += 1
 
             local_val_avg_episode_rewards.append(current_episode_reward)
             local_val_avg_episode_nr_frames.append(ep_frames)
 
-        avg_ep_reward = sum(
-            local_val_avg_episode_rewards / len(local_val_avg_episode_rewards)
+        avg_ep_reward = sum(local_val_avg_episode_rewards) / len(
+            local_val_avg_episode_rewards
         )
-        avg_ep_nr_frames = sum(
-            local_val_avg_episode_nr_frames / len(local_val_avg_episode_nr_frames)
+
+        avg_ep_nr_frames = sum(local_val_avg_episode_nr_frames) / len(
+            local_val_avg_episode_nr_frames
         )
+
         self.val_avg_episode_rewards.append(avg_ep_reward)
         self.val_avg_episode_nr_frames.append(avg_ep_nr_frames)
+        self.val_log_frame_stamp.append(self.t)
 
         return max(local_val_avg_episode_rewards), avg_ep_reward, avg_ep_nr_frames
 
@@ -324,6 +348,29 @@ class AgentDQN:
             and ep_frames < episode_termination_limit
             and self.t < train_frames
         ):
+
+            # Logging training progress
+            if (self.t % self.checkpoint_frequency == 0) and (
+                self.t > (0 if not self.log_frame_stamp else self.log_frame_stamp[-1])
+            ):  # check that we did not already log this status
+                # must check for edge case where training is restarted
+               
+                self.log_training_info()
+                if self.store_intermediate_result:
+                    self.save_training_status(self.checkpoint_file_name)
+
+            # Check if training routine should be stopped for a validation routine
+            if (
+                self.validation_enabled
+                and (self.t % self.train_step_cnt == 0)
+                and (
+                    self.t
+                    > (0 if not self.val_log_frame_stamp else self.val_log_frame_stamp[-1])
+                )
+            ):
+                logging.info(f"Ending train episode for validation at t = {self.t}")
+                break
+
             action = self.select_action(s, self.t, self.num_actions)
             reward, is_terminated = self.env.act(action)
             reward = torch.tensor([[reward]], device=device).float()
@@ -351,17 +398,6 @@ class AgentDQN:
                     == 0
                 ):
                     self.target_model.load_state_dict(self.policy_model.state_dict())
-
-                # Logging training progress
-                if self.t % self.checkpoint_frequency == 0:
-
-                    # Compute and save avg performance
-                    self.log_training_info()
-                    self.save_training_status(self.checkpoint_file_name)
-
-                # stop current episode
-                if self.t % self.train_step_cnt == 0:
-                    break
 
             current_episode_reward += reward.item()
 
@@ -426,9 +462,11 @@ class AgentDQN:
                 "log_frame_stamp": self.log_frame_stamp,
                 "val_avg_episode_rewards": self.val_avg_episode_rewards,
                 "val_avg_episode_nr_frames": self.val_avg_episode_nr_frames,
+                "val_log_frame_stamp": self.val_log_frame_stamp,
             },
             save_file_name,
         )
+        logging.info(f"Checkpoint saved at t = {self.t}")
 
     def learn(self, sample):
         state, action, reward, next_state, terminated = sample
@@ -461,7 +499,7 @@ def play_game_visual(game):
 
     proj_dir = os.path.dirname(os.path.abspath(__file__))
     default_save_folder = os.path.join(proj_dir, game)
-    file_name = os.path.join(default_save_folder, game + "_model")
+    file_name = os.path.join(default_save_folder, game + "_checkpoint")
 
     agent.load_policy_model(file_name)
 
@@ -487,7 +525,8 @@ def play_game_visual(game):
         gui.display_state(env.state())
 
         state = get_state(env.state())
-        action = agent.get_action_from_model(state)
+        # state, t, num_actions, epsilon=None, random_action=False
+        action = agent.select_action(state, agent.t, agent.num_actions, epsilon=agent.validation_epslion)
         reward, is_terminated = env.act(action)
 
         game_reward.set(game_reward.get() + reward)
@@ -538,10 +577,10 @@ def main():
 
     # print("Cuda available?: " + str(torch.cuda.is_available()))
     my_agent = AgentDQN(env, file_name, args.save, load_file_path)
-    my_agent.train(train_frames=20_000_000, episode_termination_limit=100_000)
+    my_agent.train(train_frames=10_000_000, episode_termination_limit=100_000)
 
 
 if __name__ == "__main__":
-    main()
+    # main()
 
-    # play_game_visual("breakout")
+    play_game_visual("breakout")
