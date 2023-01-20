@@ -1,6 +1,9 @@
 # TODO: add 2/3 training, 1/3 validation with frozen epsilon (validation done with small epsilon)
-# save maximum Q value
-# TODO change e counter usage to frame counter
+# save maximum Q value (question? check q validation during validation, right?)
+
+# q: should add environment seed? What about torch-deterministic
+# q: do you use wandb?
+# q: epoch? is it number of trainings? better than using number of frames?
 
 import time
 import torch
@@ -108,6 +111,8 @@ class AgentDQN:
 
         self.store_intermediate_result = checkpoints
         self.checkpoint_file_name = load_file_path
+        self.train_step_cnt = 200_000
+        self.checkpoint_frequency = 50_000
 
         self.env = env
         self.epsilon_by_frame = self._get_linear_decay_function(
@@ -120,6 +125,9 @@ class AgentDQN:
         self.batch_size = 32
         self.training_freq = 4
         self.target_model_update_freq = 100
+
+        self.validation_enabled = True
+        self.validation_step_cnt = 125_000
         self.validation_epslion = 0.001
 
         # returns state as [w, h, channels]
@@ -142,18 +150,39 @@ class AgentDQN:
         )
 
         # Set initial values related to training and monitoring
-        self.t_start = None
         self.t = 0  # frame nr
         self.e = 0  # episode nr
         self.policy_model_update_counter = 0
-        self.episode_rewards = []
-        self.episode_nr_frames = []  # how many frames did the episode last
-        self.frame_stamp = []
+        self.avg_episode_rewards = []
+        self.avg_episode_nr_frames = []  # how many frames did the episode last
+        self.log_frame_stamp = []
+
+        self.val_avg_episode_rewards = []
+        self.val_avg_episode_nr_frames = []
+
+        self.reset_episode_training_logs()
 
         if self.checkpoint_file_name is not None and os.path.exists(
             self.checkpoint_file_name
         ):
             self.load_training_state(self.checkpoint_file_name)
+
+    def _get_exp_decay_function(self, start, end, decay):
+        return lambda x: end + (start - end) * np.exp(-1.0 * x / decay)
+
+    def _get_linear_decay_function(self, start, end, decay):
+        """Return a function that enables getting the value of epsilon at step x.
+
+        Args:
+            start (float): start value of the epsilon function (x=0)
+            end (float): end value of the epsilon function (x=decay_in)
+            decay_in (int): how many steps to reach the end value
+        """
+        return lambda x: max(end, min(start, start - (start - end) * (x / decay)))
+
+    def reset_episode_training_logs(self):
+        self.episode_rewards = []
+        self.episode_nr_frames = []
 
     def load_training_state(self, checkpoint_load_path):
         checkpoint = torch.load(checkpoint_load_path)
@@ -167,9 +196,12 @@ class AgentDQN:
         self.t = checkpoint["frame"]
         self.e = checkpoint["episode"]
         self.policy_model_update_counter = checkpoint["policy_model_update_counter"]
-        self.episode_rewards = checkpoint["episode_rewards"]
-        self.episode_nr_frames = checkpoint["episode_nr_frames"]
-        self.frame_stamp = checkpoint["frame_stamp"]
+        self.avg_episode_rewards = checkpoint["avg_episode_rewards"]
+        self.avg_episode_nr_frames = checkpoint["avg_episode_nr_frames"]
+        self.log_frame_stamp = checkpoint["log_frame_stamp"]
+
+        self.val_avg_episode_rewards = checkpoint["val_avg_episode_rewards"]
+        self.val_avg_episode_nr_frames = checkpoint["val_avg_episode_nr_frames"]
 
     def load_policy_model(self, model_path):
         model_data = torch.load(model_path)
@@ -200,13 +232,46 @@ class AgentDQN:
 
     def train(self, train_frames, episode_termination_limit):
 
-        self.t_start = time.time()
-
-        max_reward = 0
-
         # Train for a number of episodes
         while self.t < train_frames:
-            # Initialize the return for every episode (we should see this eventually increase)
+
+            current_episode_reward, ep_frames = self.train_episode(
+                train_frames, episode_termination_limit
+            )
+
+            self.episode_rewards.append(current_episode_reward)
+            self.episode_nr_frames.append(ep_frames)
+            self.e += 1
+
+            if (
+                self.validation_enabled
+                and (self.t % self.train_step_cnt == 0)
+                and (self.t != 0)
+            ):
+                logging.info(f"Starting validation at: {self.t}")
+
+                # start a validation sequence
+                max_ep_reward, avg_ep_reward, avg_ep_nr_frames = self.validate_model(
+                    episode_termination_limit
+                )
+                self.log_validation_info(max_ep_reward, avg_ep_reward, avg_ep_nr_frames)
+
+                if self.store_intermediate_result:
+                    self.save_training_status(self.checkpoint_file_name)
+
+
+        # Print final logging info
+        self.log_training_info()
+
+        # Write data to file
+        self.save_training_status(
+            self.output_file_name,
+        )
+
+    def validate_model(self, episode_termination_limit):
+        local_val_avg_episode_rewards = []
+        local_val_avg_episode_nr_frames = []
+        for i in range(self.validation_step_cnt):
             current_episode_reward = 0.0
             ep_frames = 0
 
@@ -216,83 +281,121 @@ class AgentDQN:
 
             is_terminated = False
             while (not is_terminated) and ep_frames < episode_termination_limit:
-                # Generate data
-                action = self.select_action(s, self.t, self.num_actions)
-
+                action = self.select_action(
+                    s, self.t, self.num_actions, epsilon=self.validation_epslion
+                )
                 reward, is_terminated = self.env.act(action)
                 reward = torch.tensor([[reward]], device=device).float()
                 is_terminated = torch.tensor([[is_terminated]], device=device)
-
-                # Obtain next state
                 s_prime = get_state(self.env.state())
 
-                # Write the current frame to replay buffer
-                self.replay_buffer.add(s, action, reward, s_prime, is_terminated)
-
-                # Start learning when there's enough data and when we can sample a batch of size BATCH_SIZE
-                if (
-                    self.t > self.replay_start_size
-                    and len(self.replay_buffer) >= self.batch_size
-                ):
-
-                    # Train every n number of frames
-                    if self.t % self.training_freq == 0:
-                        sample = self.replay_buffer.sample(self.batch_size)
-                        self.policy_model_update_counter += 1
-                        self.learn(sample)
-
-                    # Update the target network only after some number of policy network updates
-                    if (
-                        self.policy_model_update_counter > 0
-                        and self.policy_model_update_counter
-                        % self.target_model_update_freq
-                        == 0
-                    ):
-                        self.target_model.load_state_dict(
-                            self.policy_model.state_dict()
-                        )
-
                 current_episode_reward += reward.item()
-                if current_episode_reward > max_reward:
-                    max_reward = current_episode_reward
 
-                self.t += 1
                 ep_frames += 1
 
                 # Continue the process
                 s = s_prime
 
-            # Increment the episodes
-            self.e += 1
+            local_val_avg_episode_rewards.append(current_episode_reward)
+            local_val_avg_episode_nr_frames.append(ep_frames)
 
-            # Save episode stats
-            self.episode_rewards.append(current_episode_reward)
-            self.frame_stamp.append(self.t)
-            self.episode_nr_frames.append(ep_frames)
+        avg_ep_reward = sum(
+            local_val_avg_episode_rewards / len(local_val_avg_episode_rewards)
+        )
+        avg_ep_nr_frames = sum(
+            local_val_avg_episode_nr_frames / len(local_val_avg_episode_nr_frames)
+        )
+        self.val_avg_episode_rewards.append(avg_ep_reward)
+        self.val_avg_episode_nr_frames.append(avg_ep_nr_frames)
 
-            # Logging training progress
-            if self.e % 1000 == 0:
-                self.log_training_info(1000)
+        return max(local_val_avg_episode_rewards), avg_ep_reward, avg_ep_nr_frames
 
-                if self.store_intermediate_result:
+    def train_episode(self, train_frames, episode_termination_limit):
+        current_episode_reward = 0.0
+        ep_frames = 0
+
+        # Initialize the environment and start state
+        self.env.reset()
+        s = get_state(self.env.state())
+
+        is_terminated = False
+        while (
+            (not is_terminated)
+            and ep_frames < episode_termination_limit
+            and self.t < train_frames
+        ):
+            action = self.select_action(s, self.t, self.num_actions)
+            reward, is_terminated = self.env.act(action)
+            reward = torch.tensor([[reward]], device=device).float()
+            is_terminated = torch.tensor([[is_terminated]], device=device)
+            s_prime = get_state(self.env.state())
+
+            self.replay_buffer.add(s, action, reward, s_prime, is_terminated)
+
+            # Start learning when there's enough data and when we can sample a batch of size BATCH_SIZE
+            if (
+                self.t > self.replay_start_size
+                and len(self.replay_buffer) >= self.batch_size
+            ):
+
+                # Train every n number of frames
+                if self.t % self.training_freq == 0:
+                    sample = self.replay_buffer.sample(self.batch_size)
+                    self.policy_model_update_counter += 1
+                    self.learn(sample)
+
+                # Update the target network only after some number of policy network updates
+                if (
+                    self.policy_model_update_counter > 0
+                    and self.policy_model_update_counter % self.target_model_update_freq
+                    == 0
+                ):
+                    self.target_model.load_state_dict(self.policy_model.state_dict())
+
+                # Logging training progress
+                if self.t % self.checkpoint_frequency == 0:
+
+                    # Compute and save avg performance
+                    self.log_training_info()
                     self.save_training_status(self.checkpoint_file_name)
 
-        # Print final logging info
-        self.log_training_info(1000)
+                # stop current episode
+                if self.t % self.train_step_cnt == 0:
+                    break
 
-        # Write data to file
-        self.save_training_status(
-            self.output_file_name,
+            current_episode_reward += reward.item()
+
+            self.t += 1
+            ep_frames += 1
+
+            # Continue the process
+            s = s_prime
+
+        # end of episode, return episode statistics:
+        return current_episode_reward, ep_frames
+
+    def log_validation_info(self, max_reward, avg_reward, avg_ep_len):
+        logging.info(
+            "Validation"
+            + " | Max reward: "
+            + str(max_reward)
+            + " | Avg reward: "
+            + str(np.around(avg_reward, 2))
+            + " | Avg frames (episode): "
+            + str(avg_ep_len)
         )
 
-    def log_training_info(self, last_n):
-        avg_reward = sum(self.episode_rewards[-last_n:]) / len(
-            self.episode_rewards[-last_n:]
-        )
-        max_reward = max(self.episode_rewards[-last_n:])
-        avg_episode_nr_frames = sum(self.episode_nr_frames[-last_n:]) / len(
-            self.episode_nr_frames[-last_n:]
-        )
+    def log_training_info(self):
+        avg_reward = sum(self.episode_rewards) / len(self.episode_rewards)
+        max_reward = max(self.episode_rewards)
+        avg_ep_len = sum(self.episode_nr_frames) / len(self.episode_nr_frames)
+
+        self.reset_episode_training_logs()
+
+        self.avg_episode_rewards.append(avg_reward)
+        self.avg_episode_nr_frames.append(avg_ep_len)
+        self.log_frame_stamp.append(self.t)
+
         logging.info(
             "Frames seen: "
             + str(self.t)
@@ -303,9 +406,9 @@ class AgentDQN:
             + " | Avg reward: "
             + str(np.around(avg_reward, 2))
             + " | Avg frames (episode): "
-            + str(avg_episode_nr_frames)
-            + " | Time per frame: "
-            + str((time.time() - self.t_start) / self.t)
+            + str(avg_ep_len)
+            + " | Epsilon: "
+            + str(self.epsilon_by_frame(self.t))
         )
 
     def save_training_status(self, save_file_name):
@@ -318,25 +421,14 @@ class AgentDQN:
                 "frame": self.t,
                 "episode": self.e,
                 "policy_model_update_counter": self.policy_model_update_counter,
-                "episode_rewards": self.episode_rewards,
-                "episode_nr_frames": self.episode_nr_frames,
-                "frame_stamp": self.frame_stamp,
+                "avg_episode_rewards": self.avg_episode_rewards,
+                "avg_episode_nr_frames": self.avg_episode_nr_frames,
+                "log_frame_stamp": self.log_frame_stamp,
+                "val_avg_episode_rewards": self.val_avg_episode_rewards,
+                "val_avg_episode_nr_frames": self.val_avg_episode_nr_frames,
             },
             save_file_name,
         )
-
-    def _get_exp_decay_function(self, start, end, decay):
-        return lambda x: end + (start - end) * np.exp(-1.0 * x / decay)
-
-    def _get_linear_decay_function(self, start, end, decay):
-        """Return a function that enables getting the value of epsilon at step x.
-
-        Args:
-            start (float): start value of the epsilon function (x=0)
-            end (float): end value of the epsilon function (x=decay_in)
-            decay_in (int): how many steps to reach the end value
-        """
-        return lambda x: max(end, min(start, start - (start - end) * (x / decay)))
 
     def learn(self, sample):
         state, action, reward, next_state, terminated = sample
@@ -361,6 +453,7 @@ class AgentDQN:
         self.optimizer.step()
 
 
+### Watch the agent in play
 def play_game_visual(game):
 
     env = Environment(game)
