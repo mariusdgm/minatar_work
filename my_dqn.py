@@ -2,9 +2,10 @@
 
 # q: should add environment seed? What about torch-deterministic -> yes, enable this, log it but don't always use the same one
 # q: do you use wandb? -> maybe, not now
-# q: epoch? -> use this
+# q: epoch? -> use this, + log time per epoch
 # TODO: split progress saving into logging, checkpoint, replay buffer (don't save replay buffer like this, split)
 
+# q: do you also save the frame alongside the replay buffer as metadata (so you know at what time did we have that replay buffer)
 
 import time
 import datetime
@@ -25,41 +26,49 @@ import torch.nn.functional as F
 import torch.autograd as autograd
 
 from minatar import Environment
-from minatar.gui import GUI
 
 import seaborn as sns
 import matplotlib.pyplot as plt
-import tkinter as Tk
 
+
+from replay_buffer import ReplayBuffer
+
+### Setup logging for training ####
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# create console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# create file handler
+file_handler = logging.FileHandler('training.log')
+file_handler.setLevel(logging.INFO)
+
+# create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+file_handler.setFormatter(formatter)
+
+# add the handlers to the logger
+logger.addHandler(console_handler)
+logger.addHandler(file_handler)
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s -%(message)s",
-    datefmt="%H:%M:%S",
-)
 
-
-class ReplayBuffer(object):
-    def __init__(self, capacity):
-        self.buffer = deque(maxlen=capacity)
-
-    def add(self, state, action, reward, next_state, done):
-        state = state.cpu().data
-        next_state = next_state.cpu().data
-
-        self.buffer.append((state, action, reward, next_state, done))
-
-    def sample(self, batch_size):
-        state, action, reward, next_state, done = zip(
-            *random.sample(self.buffer, batch_size)
-        )
-        return np.concatenate(state), action, reward, np.concatenate(next_state), done
-
-    def __len__(self):
-        return len(self.buffer)
+def seed_everything(seed):
+    """Set the seed on everything I can think of.
+    Hopefully this should ensure reproducibility.
+    """
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
 
 
 class Conv_QNet(nn.Module):
@@ -113,29 +122,21 @@ class AgentDQN:
         self, env=None, output_file=None, checkpoints=True, load_file_path=None
     ) -> None:
 
+        self.env = env
         self.output_file_name = output_file
-
         self.store_intermediate_result = checkpoints
         self.checkpoint_file_name = load_file_path
-        self.train_step_cnt = 200_000
-        self.checkpoint_frequency = 50_000
 
-        self.env = env
+        self.train_step_cnt = 200_000
+        self.validation_enabled = True
+        self.validation_step_cnt = 100_000
+        self.validation_epslion = 0.001
+
+        self.replay_start_size = 5000
         self.epsilon_by_frame = self._get_linear_decay_function(
             start=1.0, end=0.01, decay=250_000
         )
-
         self.gamma = 0.99  # discount rate
-        self.replay_buffer = ReplayBuffer(100_000)
-        self.replay_start_size = 5000
-        self.batch_size = 32
-        self.training_freq = 4
-        self.target_model_update_freq = 100
-
-        self.validation_enabled = True
-        self.validation_step_cnt = 100_000
-
-        self.validation_epslion = 0.001
 
         # returns state as [w, h, channels]
         state_shape = env.state_shape()
@@ -145,30 +146,25 @@ class AgentDQN:
         self.in_channels = self.in_features[0]
         self.num_actions = env.num_actions()
 
-        self.policy_model = Conv_QNet(
-            self.in_features, self.in_channels, self.num_actions
+        self.replay_buffer = ReplayBuffer(
+            max_size=100_000,
+            state_dim=self.in_features,
+            action_dim=self.num_actions,
+            n_step=0,
         )
-        self.target_model = Conv_QNet(
-            self.in_features, self.in_channels, self.num_actions
-        )
+        self.batch_size = 32
+        self.training_freq = 4
+        self.target_model_update_freq = 100
 
-        self.optimizer = optim.Adam(
-            self.policy_model.parameters(), lr=0.0000625, eps=0.00015
-        )
+        self._init_models()  # init policy, target and optim
 
         # Set initial values related to training and monitoring
         self.t = 0  # frame nr
         self.e = 0  # episode nr
         self.policy_model_update_counter = 0
-        self.avg_episode_rewards = []
-        self.avg_episode_nr_frames = []  # how many frames did the episode last
-        self.log_frame_stamp = []
 
-        self.val_avg_episode_rewards = []
-        self.val_avg_episode_nr_frames = []
-        self.val_log_frame_stamp = []
-
-        self.reset_episode_training_logs()
+        self._reset_validation_logs()
+        self._reset_episode_training_logs()
 
         if self.checkpoint_file_name is not None and os.path.exists(
             self.checkpoint_file_name
@@ -188,9 +184,31 @@ class AgentDQN:
         """
         return lambda x: max(end, min(start, start - (start - end) * (x / decay)))
 
-    def reset_episode_training_logs(self):
+    def _init_models(self):
+        self.policy_model = Conv_QNet(
+            self.in_features, self.in_channels, self.num_actions
+        )
+        self.target_model = Conv_QNet(
+            self.in_features, self.in_channels, self.num_actions
+        )
+
+        self.optimizer = optim.Adam(
+            self.policy_model.parameters(), lr=0.0000625, eps=0.00015
+        )
+
+    def _reset_episode_training_logs(self):
         self.episode_rewards = []
         self.episode_nr_frames = []
+
+    def _reset_training_logs(self):
+        self.avg_episode_rewards = []
+        self.avg_episode_nr_frames = []
+        self.log_frame_stamp = []
+
+    def _reset_validation_logs(self):
+        self.val_avg_episode_rewards = []
+        self.val_avg_episode_nr_frames = []
+        self.val_log_frame_stamp = []
 
     def load_training_state(self, checkpoint_load_path):
         checkpoint = torch.load(checkpoint_load_path)
@@ -240,7 +258,7 @@ class AgentDQN:
         return self.policy_model(state).max(1)[1].view(1, 1)
 
     def train(self, train_frames, episode_termination_limit):
-        logging.info(f"Starting/resuming training at: {self.t}")
+        logger.info(f"Starting/resuming training at: {self.t}")
 
         # Train for a number of episodes
         while self.t < train_frames:
@@ -265,7 +283,7 @@ class AgentDQN:
                     )
                 )  # check if this validation was already done
             ):
-                logging.info(f"Starting validation at t = {self.t}")
+                logger.info(f"Starting validation at t = {self.t}")
 
                 # start a validation sequence
                 max_ep_reward, avg_ep_reward, avg_ep_nr_frames = self.validate_model(
@@ -354,7 +372,7 @@ class AgentDQN:
                 self.t > (0 if not self.log_frame_stamp else self.log_frame_stamp[-1])
             ):  # check that we did not already log this status
                 # must check for edge case where training is restarted
-               
+
                 self.log_training_info()
                 if self.store_intermediate_result:
                     self.save_training_status(self.checkpoint_file_name)
@@ -365,10 +383,14 @@ class AgentDQN:
                 and (self.t % self.train_step_cnt == 0)
                 and (
                     self.t
-                    > (0 if not self.val_log_frame_stamp else self.val_log_frame_stamp[-1])
+                    > (
+                        0
+                        if not self.val_log_frame_stamp
+                        else self.val_log_frame_stamp[-1]
+                    )
                 )
             ):
-                logging.info(f"Ending train episode for validation at t = {self.t}")
+                logger.info(f"Ending train episode for validation at t = {self.t}")
                 break
 
             action = self.select_action(s, self.t, self.num_actions)
@@ -411,7 +433,7 @@ class AgentDQN:
         return current_episode_reward, ep_frames
 
     def log_validation_info(self, max_reward, avg_reward, avg_ep_len):
-        logging.info(
+        logger.info(
             "Validation"
             + " | Max reward: "
             + str(max_reward)
@@ -426,13 +448,13 @@ class AgentDQN:
         max_reward = max(self.episode_rewards)
         avg_ep_len = sum(self.episode_nr_frames) / len(self.episode_nr_frames)
 
-        self.reset_episode_training_logs()
+        self._reset_episode_training_logs()
 
         self.avg_episode_rewards.append(avg_reward)
         self.avg_episode_nr_frames.append(avg_ep_len)
         self.log_frame_stamp.append(self.t)
 
-        logging.info(
+        logger.info(
             "Frames seen: "
             + str(self.t)
             + " | Episode: "
@@ -466,7 +488,7 @@ class AgentDQN:
             },
             save_file_name,
         )
-        logging.info(f"Checkpoint saved at t = {self.t}")
+        logger.info(f"Checkpoint saved at t = {self.t}")
 
     def learn(self, sample):
         state, action, reward, next_state, terminated = sample
@@ -491,89 +513,33 @@ class AgentDQN:
         self.optimizer.step()
 
 
-### Watch the agent in play
-def play_game_visual(game):
-
-    env = Environment(game)
-    agent = AgentDQN(env=env)
-
-    proj_dir = os.path.dirname(os.path.abspath(__file__))
-    default_save_folder = os.path.join(proj_dir, game)
-    file_name = os.path.join(default_save_folder, game + "_checkpoint")
-
-    agent.load_policy_model(file_name)
-
-    gui = GUI(env.game_name(), env.n_channels)
-
-    env.reset()
-
-    is_terminate = Tk.BooleanVar()
-    is_terminate.set(False)
-
-    game_reward = Tk.DoubleVar()
-    game_reward.set(0.0)
-
-    def game_step_visual():
-
-        if is_terminate.get() == True:
-            print("Final Game score: ", str(game_reward.get()))
-            time.sleep(3)
-            game_reward.set(0.0)
-            is_terminate.set(False)
-            env.reset()
-
-        gui.display_state(env.state())
-
-        state = get_state(env.state())
-        # state, t, num_actions, epsilon=None, random_action=False
-        action = agent.select_action(state, agent.t, agent.num_actions, epsilon=agent.validation_epslion)
-        reward, is_terminated = env.act(action)
-
-        game_reward.set(game_reward.get() + reward)
-
-        if is_terminated:
-            is_terminate.set(True)
-
-        gui.update(50, game_step_visual)
-
-    gui.update(0, game_step_visual)
-    gui.run()
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--game", "-g", type=str)
+    parser.add_argument("--game", "-g", type=str, default="breakout")
     parser.add_argument("--output", "-o", type=str)
-    parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--loadfile", "-l", type=str)
     parser.add_argument("--save", "-s", action="store_true", default=True)
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.basicConfig(level=logging.INFO)
-
-    if args.game:
-        game = args.game
-    else:
-        game = "breakout"
-
     proj_dir = os.path.dirname(os.path.abspath(__file__))
-    default_save_folder = os.path.join(proj_dir, game)
+    default_save_folder = os.path.join(proj_dir, args.game)
 
     if args.output:
         file_name = args.output
     else:
-        file_name = os.path.join(default_save_folder, game + "_model")
+        file_name = os.path.join(default_save_folder, args.game + "_model")
 
     if args.loadfile:
         load_file_path = args.loadfile
     else:
-        load_file_path = os.path.join(default_save_folder, game + "_checkpoint")
+        load_file_path = os.path.join(default_save_folder, args.game + "_checkpoint")
 
     if not args.output or not args.loadfile:
         Path(default_save_folder).mkdir(parents=True, exist_ok=True)
 
-    env = Environment(game)
+    env = Environment(args.game)
 
     # print("Cuda available?: " + str(torch.cuda.is_available()))
     my_agent = AgentDQN(env, file_name, args.save, load_file_path)
@@ -581,6 +547,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
-
-    play_game_visual("breakout")
+    main()
+    # play_game_visual("breakout")
