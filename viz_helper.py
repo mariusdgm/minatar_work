@@ -6,7 +6,8 @@ import seaborn as sns
 sns.set()
 
 import torch
-from my_dqn import ReplayBuffer
+
+import pandas as pd
 
 
 def read_training_logs(checkpoint_load_path):
@@ -47,6 +48,18 @@ def plot_episodic_logs(fig, axs, ep_rewards, ep_frames, log_indx, title):
         "Frames",
     )
 
+def parse_log_example():
+    log_data = pd.read_csv("training.log", sep=" - ", header=None, names=["time", "name", "level", "message"])
+
+    # extract the relevant information
+    episodes = []
+    rewards = []
+    for message in log_data["message"]:
+        if "Episode" in message:
+            episode = int(message.split()[1])
+            reward = float(message.split()[-1])
+            episodes.append(episode)
+            rewards.append(reward)
 
 if __name__ == "__main__":
     game = "breakout"

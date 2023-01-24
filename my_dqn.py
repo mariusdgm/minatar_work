@@ -5,7 +5,6 @@
 # q: epoch? -> use this, + log time per epoch
 # TODO: split progress saving into logging, checkpoint, replay buffer (don't save replay buffer like this, split)
 
-# q: do you also save the frame alongside the replay buffer as metadata (so you know at what time did we have that replay buffer)
 
 import time
 import datetime
@@ -29,7 +28,6 @@ from minatar import Environment
 
 import seaborn as sns
 import matplotlib.pyplot as plt
-
 
 from replay_buffer import ReplayBuffer
 
@@ -134,7 +132,7 @@ class AgentDQN:
 
         self.replay_start_size = 5000
         self.epsilon_by_frame = self._get_linear_decay_function(
-            start=1.0, end=0.01, decay=250_000
+            start=1.0, end=0.01, decay=250_000, eps_decay_start=self.replay_start_size
         )
         self.gamma = 0.99  # discount rate
 
@@ -174,7 +172,7 @@ class AgentDQN:
     def _get_exp_decay_function(self, start, end, decay):
         return lambda x: end + (start - end) * np.exp(-1.0 * x / decay)
 
-    def _get_linear_decay_function(self, start, end, decay):
+    def _get_linear_decay_function(self, start, end, decay, eps_decay_start):
         """Return a function that enables getting the value of epsilon at step x.
 
         Args:
@@ -182,7 +180,7 @@ class AgentDQN:
             end (float): end value of the epsilon function (x=decay_in)
             decay_in (int): how many steps to reach the end value
         """
-        return lambda x: max(end, min(start, start - (start - end) * (x / decay)))
+        return lambda x: max(end, min(start, start - (start - end) * ((x - eps_decay_start) / decay)))
 
     def _init_models(self):
         self.policy_model = Conv_QNet(
@@ -210,30 +208,31 @@ class AgentDQN:
         self.val_avg_episode_nr_frames = []
         self.val_log_frame_stamp = []
 
-    def load_training_state(self, checkpoint_load_path):
-        checkpoint = torch.load(checkpoint_load_path)
-        self.policy_model.load_state_dict(checkpoint["policy_model_state_dict"])
-        self.target_model.load_state_dict(checkpoint["target_model_state_dict"])
+    def load_training_state(self, models_load_file, replay_buffer_file, training_stats_file):
+        self.load_models(models_load_file)
         self.policy_model.train()
         self.target_model.train()
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-        self.replay_buffer = checkpoint["replay_buffer"]
+        self.replay_buffer.load(replay_buffer_file)
+
+        self.load_training_stats(training_stats_file)
+
+    def load_models(self, models_load_file):
+        checkpoint = torch.load(models_load_file)
+        self.policy_model.load_state_dict(checkpoint["policy_model_state_dict"])
+        self.target_model.load_state_dict(checkpoint["target_model_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    
+    def load_training_stats(self, training_stats_file):
+        checkpoint = torch.load(training_stats_file)
+
         self.t = checkpoint["frame"]
         self.e = checkpoint["episode"]
         self.policy_model_update_counter = checkpoint["policy_model_update_counter"]
-        self.avg_episode_rewards = checkpoint["avg_episode_rewards"]
-        self.avg_episode_nr_frames = checkpoint["avg_episode_nr_frames"]
-        self.log_frame_stamp = checkpoint["log_frame_stamp"]
-
-        self.val_avg_episode_rewards = checkpoint["val_avg_episode_rewards"]
-        self.val_avg_episode_nr_frames = checkpoint["val_avg_episode_nr_frames"]
-        self.val_log_frame_stamp = checkpoint["val_avg_episode_nr_frames"]
-
-    def load_policy_model(self, model_path):
-        model_data = torch.load(model_path)
-        self.policy_model.load_state_dict(model_data["policy_model_state_dict"])
-
+        
+        self.training_stats = checkpoint["training_stats"]
+        self.validation_stats = checkpoint["validation_stats"]
+        
     def select_action(self, state, t, num_actions, epsilon=None, random_action=False):
         # A uniform random policy
         if random_action:
@@ -242,13 +241,11 @@ class AgentDQN:
 
         # Epsilon-greedy behavior policy for action selection
         if not epsilon:
-            epsilon = self.epsilon_by_frame(t - self.replay_start_size)
+            epsilon = self.epsilon_by_frame(t)
 
         if np.random.binomial(1, epsilon) == 1:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
         else:
-            # view(1,1) shapes the tensor to be the right form (e.g. tensor([[0]])) without copying the
-            # underlying tensor.  torch._no_grad() avoids tracking history in autograd.
             with torch.no_grad():
                 action = self.get_action_from_model(state)
 
