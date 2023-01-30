@@ -10,72 +10,75 @@ import torch
 import pandas as pd
 
 
-def read_training_logs(checkpoint_load_path):
-    checkpoint = torch.load(checkpoint_load_path)
+def load_training_stats(training_stats_file):
+    checkpoint = torch.load(training_stats_file)
 
-    training_stats = {}
-    training_stats["avg_episode_rewards"] = checkpoint["avg_episode_rewards"]
-    training_stats["avg_episode_nr_frames"] = checkpoint["avg_episode_nr_frames"]
-    training_stats["log_frame_stamp"] = checkpoint["log_frame_stamp"]
-
-    validation_stats = {}
-    validation_stats["val_avg_episode_rewards"] = checkpoint["val_avg_episode_rewards"]
-    validation_stats["val_avg_episode_nr_frames"] = checkpoint[
-        "val_avg_episode_nr_frames"
-    ]
-    validation_stats["val_log_frame_stamp"] = checkpoint["val_avg_episode_nr_frames"]
+    training_stats = checkpoint["training_stats"]
+    validation_stats = checkpoint["validation_stats"]
 
     return training_stats, validation_stats
 
+def get_df_of_stat(stats, stat_name):
+    x_idx = []
+    stat_records = []
 
-def plot_episodic_logs(fig, axs, ep_rewards, ep_frames, log_indx, title):
+    for ep_stats in stats:
+        x_idx.append(ep_stats["frame_stamp"])
+        stat_records.append(ep_stats[stat_name])
+    
+    df = pd.DataFrame.from_records(stat_records, index = x_idx) 
+    df = df.reset_index()
+    df = df.rename(columns = {'index': 'frames'})
+
+    return df
+
+def plot_stat_log(stats, stat_name, title):
+    df = get_df_of_stat(stats, stat_name=stat_name)
+
+    fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True, figsize=(12, 8))
     fig.suptitle(title)
-    fig.set_figheight(8)
-    fig.set_figwidth(12)
-    sns.lineplot(x=log_indx, y=ep_rewards, ax=axs[0])
+
+    sns.lineplot(data=df, x="frames", y="mean", ax=axs[0])
     axs[0].set_ylabel(
-        "Avg episode rewards",
+        f"{stat_name} mean",
     )
     axs[0].set_xlabel(
         "Frames",
     )
 
-    sns.lineplot(x=log_indx, y=ep_frames, ax=axs[1])
+    sns.lineplot(data=df, x="frames", y="median", ax=axs[1])
     axs[1].set_ylabel(
-        "Avg episode frames",
+        f"{stat_name} median",
     )
     axs[1].set_xlabel(
         "Frames",
     )
 
-def parse_log_example():
-    log_data = pd.read_csv("training.log", sep=" - ", header=None, names=["time", "name", "level", "message"])
+    sns.lineplot(data=df, x="frames", y="max", ax=axs[2])
+    axs[2].set_ylabel(
+        f"{stat_name} max",
+    )
+    axs[2].set_xlabel(
+        "Frames",
+    )
 
-    # extract the relevant information
-    episodes = []
-    rewards = []
-    for message in log_data["message"]:
-        if "Episode" in message:
-            episode = int(message.split()[1])
-            reward = float(message.split()[-1])
-            episodes.append(episode)
-            rewards.append(reward)
+
 
 if __name__ == "__main__":
     game = "breakout"
     proj_dir = os.path.dirname(os.path.abspath(__file__))
-    default_save_folder = os.path.join(proj_dir, game)
-    load_file_path = os.path.join(default_save_folder, game + "_checkpoint")
+    default_save_folder = os.path.join(proj_dir, "checkpoints", game)
+    file_name = os.path.join(default_save_folder, game + "_train_stats")
 
-    training_stats, validation_stats = read_training_logs(load_file_path)
+    training_stats, validation_stats = load_training_stats(file_name)
 
-    fig, axs = plt.subplots(nrows=2, ncols=1)
+    # plot_stat_log(training_stats, stat_name="episode_rewards", title="Episodic rewards")
+    # plot_stat_log(training_stats, stat_name="episode_frames", title="Episodic length")
+    # plot_stat_log(training_stats, stat_name="episode_losses", title="Training loss")
+    # plot_stat_log(training_stats, stat_name="episode_max_qs", title="Episodic Q vals")
+    
+    plot_stat_log(validation_stats, stat_name="episode_rewards", title="Episodic rewards")
+    plot_stat_log(validation_stats, stat_name="episode_frames", title="Episodic length")
+    plot_stat_log(validation_stats, stat_name="episode_max_qs", title="Episodic Q vals")
 
-    plot_episodic_logs(
-        fig,
-        axs,
-        training_stats["avg_episode_rewards"],
-        training_stats["avg_episode_nr_frames"],
-        training_stats["log_frame_stamp"],
-        "Training stats",
-    )
+    plt.show()

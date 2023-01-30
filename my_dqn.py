@@ -1,5 +1,6 @@
 # q: get q val everytime I get an action? (early in training it's random)
 # q: I could get the q vals when training
+# q: logging which action was taken? -> compute stats afterwards?
 
 import time
 import datetime
@@ -367,6 +368,8 @@ class AgentDQN:
     ):
         stats = {}
 
+        stats["frame_stamp"] = self.t
+        
         stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
         stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
         stats["episode_losses"] = self.get_vector_stats(ep_losses)
@@ -436,6 +439,8 @@ class AgentDQN:
         epoch_time,
     ):
         stats = {}
+
+        stats["frame_stamp"] = self.t
 
         stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
         stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
