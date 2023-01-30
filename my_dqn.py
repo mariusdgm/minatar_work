@@ -145,7 +145,6 @@ class AgentDQN:
         # Set initial values related to training and monitoring
         self.t = 0  # frame nr
         self.episodes = 0  # episode nr
-        self.epoch = 0
         self.policy_model_update_counter = 0
 
         self.training_stats = []
@@ -286,8 +285,8 @@ class AgentDQN:
         self.logger.info(f"Starting/resuming training session at: {self.t}")
 
         # Train for a number of episodes
-        while self.epoch < train_epochs:
-            # add time to metrics
+        for epoch in range(train_epochs):
+            start_time = datetime.datetime.now()
 
             ep_train_stats = self.train_epoch()
             self.display_training_epoch_info(ep_train_stats)
@@ -302,6 +301,13 @@ class AgentDQN:
                 self.save_checkpoint(
                     self.model_file, self.replay_buffer_file, self.train_stats_file
                 )
+
+            end_time = datetime.datetime.now()
+            epoch_time = end_time - start_time
+
+            self.logger.info(f"Epoch {epoch} completed in {epoch_time}")
+            self.logger.info("\n")
+
 
         self.logger.info(f"Ended training session after {train_epochs} at t = {self.t}")
 
@@ -557,7 +563,8 @@ class AgentDQN:
 
     def display_training_epoch_info(self, stats):
         self.logger.info(
-            "Frames seen: "
+            "TRAINING STATS" 
+            + " | Frames seen: "
             + str(self.t)
             + " | Episode: "
             + str(self.episodes)
@@ -577,7 +584,8 @@ class AgentDQN:
 
     def display_validation_epoch_info(self, stats):
         self.logger.info(
-            "Max reward: "
+            "VALIDATION STATS" 
+            + " | Max reward: "
             + str(stats["episode_rewards"]["max"])
             + " | Avg reward: "
             + str(stats["episode_rewards"]["mean"])
