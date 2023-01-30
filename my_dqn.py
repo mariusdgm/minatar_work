@@ -309,7 +309,7 @@ class AgentDQN:
             self.logger.info("\n")
 
 
-        self.logger.info(f"Ended training session after {train_epochs} at t = {self.t}")
+        self.logger.info(f"Ended training session after {train_epochs} epochs at t = {self.t}")
 
     def train_epoch(self):
         self.logger.info(f"Starting training epoch at t = {self.t}")
@@ -689,7 +689,7 @@ def main():
         save_checkpoints=args.save,
         logger=train_logger,
     )
-    my_agent.train(train_epochs=50)
+    my_agent.train(train_epochs=10)
 
     handlers = my_agent.logger.handlers[:]
     for handler in handlers:
