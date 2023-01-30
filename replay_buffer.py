@@ -1,7 +1,7 @@
 from collections import deque
 import numpy as np
 import random
-import h5py
+import pickle
 
 class ReplayBuffer:
     def __init__(self, max_size, state_dim, action_dim, n_step):
@@ -23,10 +23,10 @@ class ReplayBuffer:
 
         samples = random.sample(self.buffer, batch_size)
 
-        states = np.zeros((batch_size, self.state_dim))
+        states = np.zeros((batch_size, *self.state_dim))
         actions = np.zeros((batch_size, self.action_dim))
         rewards = np.zeros(batch_size)
-        next_states = np.zeros((batch_size, self.state_dim))
+        next_states = np.zeros((batch_size, *self.state_dim))
         dones = np.zeros(batch_size)
 
         for i, sample in enumerate(samples):
@@ -45,10 +45,10 @@ class ReplayBuffer:
 
         samples = random.sample(self.buffer, batch_size)
 
-        states = np.zeros((batch_size, self.state_dim))
+        states = np.zeros((batch_size, *self.state_dim))
         actions = np.zeros((batch_size, self.action_dim))
         rewards = np.zeros((batch_size, self.n_step))
-        next_states = np.zeros((batch_size, self.state_dim))
+        next_states = np.zeros((batch_size, *self.state_dim))
         dones = np.zeros((batch_size, self.n_step))
 
         for i, sample in enumerate(samples):
@@ -69,33 +69,9 @@ class ReplayBuffer:
         return states, actions, rewards, next_states, dones
 
     def save(self, file_name):
-        with h5py.File(file_name, "w") as f:
-            states = f.create_dataset(
-                "states", data=[s for s, a, r, ns, d in self.buffer]
-            )
-            actions = f.create_dataset(
-                "actions", data=[a for s, a, r, ns, d in self.buffer]
-            )
-            rewards = f.create_dataset(
-                "rewards", data=[r for s, a, r, ns, d in self.buffer]
-            )
-            next_states = f.create_dataset(
-                "next_states", data=[ns for s, a, r, ns, d in self.buffer]
-            )
-            dones = f.create_dataset(
-                "dones", data=[d for s, a, r, ns, d in self.buffer]
-            )
-            n_step = f.create_dataset("n_step", data=[self.n_step])
+        with open(file_name, 'wb') as f:
+            pickle.dump(self.buffer, f)
 
     def load(self, file_name):
-        with h5py.File(file_name, "r") as f:
-            states = f["states"][()]
-            actions = f["actions"][()]
-            rewards = f["rewards"][()]
-            next_states = f["next_states"][()]
-            dones = f["dones"][()]
-            self.n_step = f["n_step"][()]
-            self.buffer = [
-                (s, a, r, ns, d)
-                for s, a, r, ns, d in zip(states, actions, rewards, next_states, dones)
-            ]
+        with open(file_name, 'rb') as f:
+            self.buffer = pickle.load(f)
