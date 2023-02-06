@@ -17,8 +17,8 @@ def get_action_from_model(model, state):
         return model(state).max(1)[1].view(1, 1)
 
 
-def get_action_in_state(model, state, num_actions):
-    if np.random.binomial(1, 0.001) == 1:
+def get_action_in_state(model, state, num_actions, rand_chance=0.001):
+    if np.random.binomial(1, rand_chance) == 1:
         action = torch.tensor([[random.randrange(num_actions)]], device="cpu")
     else:
         action = get_action_from_model(model, state)
@@ -68,7 +68,7 @@ def play_game_visual(game):
 
         state = get_state(env.state())
         # state, t, num_actions, epsilon=None, random_action=False
-        action = get_action_in_state(model, state, num_actions)
+        action = get_action_in_state(model, state, num_actions, rand_chance=0)
         reward, is_terminated = env.act(action)
 
         game_reward.set(game_reward.get() + reward)
@@ -83,4 +83,4 @@ def play_game_visual(game):
 
 
 if __name__ == "__main__":
-    play_game_visual("breakout")
+    play_game_visual("freeway")

@@ -62,15 +62,8 @@ def plot_stat_log(stats, stat_name, title):
         "Frames",
     )
 
-
-
-if __name__ == "__main__":
-    game = "breakout"
-    proj_dir = os.path.dirname(os.path.abspath(__file__))
-    default_save_folder = os.path.join(proj_dir, "checkpoints", game)
-    file_name = os.path.join(default_save_folder, game + "_train_stats")
-
-    training_stats, validation_stats = load_training_stats(file_name)
+def plot_training_info(train_log_file_name):
+    training_stats, validation_stats = load_training_stats(train_log_file_name)
 
     # plot_stat_log(training_stats, stat_name="episode_rewards", title="Episodic rewards")
     # plot_stat_log(training_stats, stat_name="episode_frames", title="Episodic length")
@@ -80,5 +73,37 @@ if __name__ == "__main__":
     plot_stat_log(validation_stats, stat_name="episode_rewards", title="Episodic rewards")
     plot_stat_log(validation_stats, stat_name="episode_frames", title="Episodic length")
     plot_stat_log(validation_stats, stat_name="episode_max_qs", title="Episodic Q vals")
+
+
+def load_pruning_experiment_data(train_log_file_name):
+    """TODO"""
+    # load the data
+
+    # reshape the data
+
+    return None # reshaped data
+
+def plot_pruning_exp():
+    """TODO"""
+
+    pass
+
+def plot_pruning_experiment_data(pruning_log_file_name):
+    """TODO"""
+
+    pruning_stats = load_pruning_experiment_data(train_log_file_name)
+
+if __name__ == "__main__":
+    game = "breakout"
+    proj_dir = os.path.dirname(os.path.abspath(__file__))
+    default_save_folder = os.path.join(proj_dir, "checkpoints", game)
+    train_log_file_name = os.path.join(default_save_folder, game + "_train_stats")
+    
+    pruning_log_file_name = os.path.join(default_save_folder, "pruning_exp", "pruning_results")
+
+    # plot_training_info(train_log_file_name)
+
+    plot_pruning_experiment_data(pruning_log_file_name)
+    
 
     plt.show()

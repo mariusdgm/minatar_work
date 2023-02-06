@@ -1,18 +1,11 @@
-# q: get q val everytime I get an action? (early in training it's random)
-# q: I could get the q vals when training
-# q: logging which action was taken? -> compute stats afterwards?
-
 import time
 import datetime
 import torch
 import random
 import numpy as np
-import copy
-import logging
 import os
 from pathlib import Path
 import argparse
-from collections import deque, Counter, namedtuple
 
 import torch.autograd as autograd
 import torch.nn as nn
@@ -22,26 +15,11 @@ import torch.autograd as autograd
 
 from minatar import Environment
 
-import seaborn as sns
-import matplotlib.pyplot as plt
-
 from replay_buffer import ReplayBuffer
+from utils import seed_everything, setup_logger
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
-
-
-def seed_everything(seed):
-    """Set the seed on everything I can think of.
-    Hopefully this should ensure reproducibility.
-    """
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
 
 
 class Conv_QNet(nn.Module):
@@ -114,7 +92,7 @@ class AgentDQN:
         self.validation_enabled = True
         self.validation_step_cnt = 100_000
         self.validation_epslion = 0.001
-        self.episode_termination_limit = 100_000
+        self.episode_termination_limit = 10_000
 
         self.replay_start_size = 5000
         self.epsilon_by_frame = self._get_linear_decay_function(
@@ -252,6 +230,8 @@ class AgentDQN:
         self.logger.debug(f"Training status saved at t = {self.t}")
 
     def select_action(self, state, t, num_actions, epsilon=None, random_action=False):
+        max_q = np.nan 
+
         # A uniform random policy
         if random_action:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
@@ -264,9 +244,9 @@ class AgentDQN:
         if np.random.binomial(1, epsilon) == 1:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
         else:
-            action = self.get_action_from_model(state)
+            action, max_q = self.get_max_q_and_action(state)
 
-        return action
+        return action, max_q
 
     def get_max_q_val_for_state(self, state):
         with torch.no_grad():
@@ -281,6 +261,13 @@ class AgentDQN:
     def get_action_from_model(self, state):
         with torch.no_grad():
             return self.policy_model(state).max(1)[1].view(1, 1)
+
+    def get_max_q_and_action(self, state):
+        with torch.no_grad():
+            maxq_and_action = self.policy_model(state).max(1)
+            q_val = maxq_and_action[0].item()
+            action = maxq_and_action[1].view(1, 1)
+            return action, q_val
 
     def train(self, train_epochs):
         self.logger.info(f"Starting/resuming training session at: {self.t}")
@@ -369,7 +356,7 @@ class AgentDQN:
         stats = {}
 
         stats["frame_stamp"] = self.t
-        
+
         stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
         stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
         stats["episode_losses"] = self.get_vector_stats(ep_losses)
@@ -467,7 +454,7 @@ class AgentDQN:
             < self.validation_step_cnt  # can early stop episode if the frame limit was reached
         ):
 
-            action = self.select_action(
+            action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epslion
             )
             reward, is_terminated = self.env.act(action)
@@ -475,8 +462,7 @@ class AgentDQN:
             is_terminated = torch.tensor([[is_terminated]], device=device)
             s_prime = get_state(self.env.state())
 
-            max_qval = self.get_max_q_val_for_state(s)
-            max_qs.append(max_qval)
+            max_qs.append(max_q)
 
             current_episode_reward += reward.item()
 
@@ -515,15 +501,15 @@ class AgentDQN:
             < train_frames  # can early stop episode if the frame limit was reached
         ):
 
-            action = self.select_action(s, self.t, self.num_actions)
+            action, max_q = self.select_action(s, self.t, self.num_actions)
             reward, is_terminated = self.env.act(action)
             reward = torch.tensor([[reward]], device=device).float()
             is_terminated = torch.tensor([[is_terminated]], device=device)
             s_prime = get_state(self.env.state())
 
             self.replay_buffer.append(s, action, reward, s_prime, is_terminated)
-            max_qval = self.get_max_q_val_for_state(s)
-            max_qs.append(max_qval)
+      
+            max_qs.append(max_q)
 
             # Start learning when there's enough data and when we can sample a batch of size BATCH_SIZE
             if (
@@ -627,40 +613,9 @@ class AgentDQN:
 
         return loss.item()
 
-
-def setup_logger(env_name, folder_path):
-    ### Setup logging for training ####
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-
-    # create console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-
-    # create file handler
-    time_stamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%I_%M_%S_%p")
-    log_file_name = f"{env_name}_{time_stamp}"
-    log_file_path = os.path.join(folder_path, log_file_name)
-    file_handler = logging.FileHandler(log_file_path)
-    file_handler.setLevel(logging.INFO)
-
-    # create formatter and add it to the handlers
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-
-    # add the handlers to the logger
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
-    return logger
-
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--game", "-g", type=str, default="breakout")
+    parser.add_argument("--game", "-g", type=str, default="freeway")
     parser.add_argument("--checkpoint_folder", "-c", type=str)
     parser.add_argument("--save", "-s", action="store_true", default=True)
     args = parser.parse_args()
@@ -694,7 +649,7 @@ def main():
         save_checkpoints=args.save,
         logger=train_logger,
     )
-    my_agent.train(train_epochs=10)
+    my_agent.train(train_epochs=50)
 
     handlers = my_agent.logger.handlers[:]
     for handler in handlers:
@@ -703,5 +658,7 @@ def main():
 
 
 if __name__ == "__main__":
+    
+    seed_everything(0)
     main()
     # play_game_visual("breakout")
