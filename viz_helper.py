@@ -22,13 +22,13 @@ def get_df_of_stat(stats, stat_name):
     x_idx = []
     stat_records = []
 
-    for ep_stats in stats:
-        x_idx.append(ep_stats["frame_stamp"])
-        stat_records.append(ep_stats[stat_name])
-    
+    for pruning_val in stats:
+        x_idx.append(pruning_val)
+        stat_records.append(stats[pruning_val][stat_name])
+
     df = pd.DataFrame.from_records(stat_records, index = x_idx) 
     df = df.reset_index()
-    df = df.rename(columns = {'index': 'frames'})
+    df = df.rename(columns = {'index': 'pruning_factor'})
 
     return df
 
@@ -75,23 +75,57 @@ def plot_training_info(train_log_file_name):
     plot_stat_log(validation_stats, stat_name="episode_max_qs", title="Episodic Q vals")
 
 
-def load_pruning_experiment_data(train_log_file_name):
+def load_pruning_experiment_data(pruning_exp_file):
     """TODO"""
-    # load the data
+    checkpoint = torch.load(pruning_exp_file)
+    pruning_stats = checkpoint["pruning_validation_results"]
 
-    # reshape the data
+    return pruning_stats # reshaped data
 
-    return None # reshaped data
+def get_df_of_pruning_stats(stats, stat_name):
+    x_idx = []
+    stat_records = []
 
-def plot_pruning_exp():
-    """TODO"""
+    for pruning_val in stats:
+        x_idx.append(pruning_val)
+        stat_records.append(stats[pruning_val][stat_name])
 
-    pass
+    df = pd.DataFrame.from_records(stat_records, index = x_idx) 
+    df = df.reset_index()
+    df = df.rename(columns = {'index': 'pruning_factor'})
+
+    return df
+
+def plot_pruning_stat(stats, stat_name, title=None):
+
+    df = get_df_of_stat(stats, stat_name=stat_name)
+
+    sns.catplot(x="pruning_factor", y="mean", kind="box", data=df, showfliers=False )
+
+    plt.errorbar(x=df.index, y=df['mean'], yerr=df['std'], fmt='none', ecolor='black', elinewidth=3)
+
+    plt.plot(df.index, df['min'], 'ro', markersize=4)
+    plt.plot(df.index, df['max'], 'ro', markersize=4)
+
+    for i in df.index:
+        plt.vlines(x=i, ymin=df.loc[i, 'min'], ymax=df.loc[i, 'mean'], color='black', linestyle='--')
+        plt.vlines(x=i, ymin=df.loc[i, 'mean'], ymax=df.loc[i, 'max'], color='black', linestyle='--')
+        plt.hlines(y=df.loc[i, 'mean'], xmin=i-0.3, xmax=i+0.3, color='black', linewidth=1.5)
+        plt.hlines(y=df.loc[i, 'median'], xmin=i-0.3, xmax=i+0.3, color='red', linewidth=1)
+
+    plt.title(title)
+
+    plt.show()
+    
 
 def plot_pruning_experiment_data(pruning_log_file_name):
-    """TODO"""
+    
+    pruning_stats = load_pruning_experiment_data(pruning_log_file_name)
 
-    pruning_stats = load_pruning_experiment_data(train_log_file_name)
+    plot_pruning_stat(pruning_stats, "episode_rewards", "Episodic rewards")
+    plot_pruning_stat(pruning_stats, "episode_frames", "Episodic length")
+    plot_pruning_stat(pruning_stats, "episode_max_qs", "Episodic max q val")
+
 
 if __name__ == "__main__":
     game = "breakout"

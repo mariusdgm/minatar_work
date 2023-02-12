@@ -242,7 +242,7 @@ class PruningExperiment:
 
 
 def main():
-    game = "breakout"
+    game = "freeway"
 
     # build path to trained model params
     proj_dir = os.path.abspath(".")

@@ -21,6 +21,10 @@ from utils import seed_everything, setup_logger
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 
+# un exp cu conv + lin 1
+# un exp cu lin 1
+# un exp cu l1, unul cu l2 norm
+# un exp cu structured, dim 0
 
 class Conv_QNet(nn.Module):
     def __init__(self, in_features, in_channels, num_actions):
