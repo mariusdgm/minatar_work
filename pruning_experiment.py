@@ -35,17 +35,29 @@ def get_state(s):
 
 
 class PruningExperiment:
-    def __init__(self, logger, game, model_params_file_name, exp_out_file):
+    def __init__(
+        self,
+        logger,
+        game,
+        model_params_file_name,
+        exp_out_file,
+        pruning_function,
+        exp_info,
+    ):
         self.logger = logger
         self.game = game
         self.model_params_file_name = model_params_file_name
         self.exp_out_file = exp_out_file
+        self.pruning_function = pruning_function
+        self.exp_info = exp_info
 
         self.validation_step_cnt = 100_000
-        self.validation_epslion = 0.001
+        self.validation_epsilon = 0.001
         self.episode_termination_limit = 10_000
 
     def initialize_experiment(self):
+
+        seed_everything(0)
 
         # get env dimensions
         self.env = Environment(self.game)
@@ -155,7 +167,7 @@ class PruningExperiment:
         ):
 
             action, max_q = self.select_action(
-                s, self.num_actions, epsilon=self.validation_epslion
+                s, self.num_actions, epsilon=self.validation_epsilon
             )
             reward, is_terminated = self.env.act(action)
             reward = torch.tensor([[reward]], device=device).float()
@@ -212,11 +224,12 @@ class PruningExperiment:
 
     def save_experiment_results(self, experiment_results):
         torch.save(
-            {"pruning_validation_results": experiment_results},
+            {"pruning_validation_results": experiment_results,
+            "experiment_info": self.exp_info},
             self.exp_out_file,
         )
 
-    def multiple_experiments(self, pruning_values):
+    def perform_multiple_experiments(self, pruning_values):
         experiment_results = {}
         for pv in pruning_values:
             self.logger.info(
@@ -226,23 +239,59 @@ class PruningExperiment:
             experiment_results[pv] = stats
 
         self.save_experiment_results(experiment_results)
+        self.logger.info(f"Ended experiment for {self.game} .")
+
+    def perform_single_experiment(self, pruning_value):
+        experiment_results = {}
         self.logger.info(
-                f"Ended experiment for {self.game} ."
-            )
+            f"Starting pruning experiment for {self.game} with pruning factor {pruning_value}"
+        )
+        stats = self.single_experiment(pruning_value)
+        experiment_results[pruning_value] = stats
+
+        self.save_experiment_results(experiment_results)
+        self.logger.info(f"Ended experiment for {self.game} .")
 
     def single_experiment(self, pruning_value):
 
         self.initialize_experiment()
-        if pruning_value > 0:
-            self.prune_model_globally(pruning_value)
+        if pruning_value > 0 and self.pruning_function:
+            self.pruning_function(pruning_value)
 
         validation_stats = self.validate_epoch()
 
         return validation_stats
 
 
+### Define pruning functions ###
+def pruning_method_1(pruning_factor):
+    """
+    Prune the first convolutional layer and the first 
+    linear layer in the output layer using unstructured pruning 
+    with L1 norm.
+    """
+    pass
+
+def create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name):
+
+    exp_out_file = os.path.join(exp_out_folder, "baseline")
+
+    seed_everything(0)
+
+    pruning_experiment = PruningExperiment(
+        logger=logger,
+        game=game,
+        model_params_file_name=params_file_name,
+        exp_out_file=exp_out_file,
+        pruning_function=None,
+        exp_info="Baseline performance, no pruning was done.",
+    )
+
+    pruning_experiment.perform_multiple_experiments([0.00])
+
+
 def main():
-    game = "freeway"
+    game = "breakout"
 
     # build path to trained model params
     proj_dir = os.path.abspath(".")
@@ -251,14 +300,16 @@ def main():
 
     exp_out_folder = os.path.join(default_save_folder, "pruning_exp")
     Path(exp_out_folder).mkdir(parents=True, exist_ok=True)
-    exp_out_file = os.path.join(exp_out_folder, "pruning_results")
+    # exp_out_file = os.path.join(exp_out_folder, "pruning_results")
+    exp_out_file = os.path.join(exp_out_folder, "baseline")
 
     seed_everything(0)
     logger = setup_logger(game)
 
-    pruning_experiment = PruningExperiment(logger, game, params_file_name, exp_out_file)
+    create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name)
 
-    pruning_experiment.multiple_experiments([0.00, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5])
+    # pruning_experiment.perform_multiple_experiments([0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5])
+
 
     handlers = logger.handlers[:]
     for handler in handlers:
