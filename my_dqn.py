@@ -23,7 +23,7 @@ device = "cpu"
 
 # un exp cu conv + lin 1
 # un exp cu lin 1
-# un exp cu l1, unul cu l2 norm
+# un exp cu l1, unul cu l2 norm - no l2_unstructured implemented
 # un exp cu structured, dim 0
 
 class Conv_QNet(nn.Module):

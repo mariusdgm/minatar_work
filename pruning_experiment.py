@@ -1,3 +1,6 @@
+import os
+import sys
+
 import time
 import datetime
 import random
@@ -7,14 +10,14 @@ import torch.nn.utils.prune as prune
 
 import numpy as np
 
-import logging
-import os
 from pathlib import Path
 import argparse
 
 from minatar import Environment
 from my_dqn import Conv_QNet
 from utils import seed_everything, setup_logger
+
+import multiprocessing
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
@@ -42,14 +45,14 @@ class PruningExperiment:
         model_params_file_name,
         exp_out_file,
         pruning_function,
-        exp_info,
+        experiment_info,
     ):
         self.logger = logger
         self.game = game
         self.model_params_file_name = model_params_file_name
         self.exp_out_file = exp_out_file
         self.pruning_function = pruning_function
-        self.exp_info = exp_info
+        self.exp_info = experiment_info
 
         self.validation_step_cnt = 100_000
         self.validation_epsilon = 0.001
@@ -224,8 +227,10 @@ class PruningExperiment:
 
     def save_experiment_results(self, experiment_results):
         torch.save(
-            {"pruning_validation_results": experiment_results,
-            "experiment_info": self.exp_info},
+            {
+                "pruning_validation_results": experiment_results,
+                "experiment_info": self.exp_info,
+            },
             self.exp_out_file,
         )
 
@@ -233,45 +238,83 @@ class PruningExperiment:
         experiment_results = {}
         for pv in pruning_values:
             self.logger.info(
-                f"Starting pruning experiment for {self.game} with pruning factor {pv}"
+                f"Starting pruning experiment for {self.game} with pruning method {self.pruning_function.__name__} using pruning factor {pv}"
             )
             stats = self.single_experiment(pv)
             experiment_results[pv] = stats
 
         self.save_experiment_results(experiment_results)
-        self.logger.info(f"Ended experiment for {self.game} .")
+        self.logger.info(
+            f"Ended experiment for {self.game} with pruning method {self.pruning_function.__name__}."
+        )
 
     def perform_single_experiment(self, pruning_value):
         experiment_results = {}
-        self.logger.info(
-            f"Starting pruning experiment for {self.game} with pruning factor {pruning_value}"
-        )
+
+        if self.pruning_function:
+            self.logger.info(
+                f"Starting pruning experiment for {self.game} with pruning method {self.pruning_function.__name__} using pruning factor {pruning_value}"
+            )
+        else:
+            self.logger.info(
+                f"No pruning function defined, running baseline experiment"
+            )
         stats = self.single_experiment(pruning_value)
         experiment_results[pruning_value] = stats
 
         self.save_experiment_results(experiment_results)
-        self.logger.info(f"Ended experiment for {self.game} .")
+
+        if self.pruning_function:
+            self.logger.info(
+                f"Ended experiment for {self.game} with pruning method {self.pruning_function.__name__}."
+            )
+        else:
+            self.logger.info(f"Baseline experiment ended")
 
     def single_experiment(self, pruning_value):
 
         self.initialize_experiment()
         if pruning_value > 0 and self.pruning_function:
-            self.pruning_function(pruning_value)
+            self.pruning_function(self.model, pruning_value)
 
         validation_stats = self.validate_epoch()
 
         return validation_stats
 
 
-### Define pruning functions ###
-def pruning_method_1(pruning_factor):
+########## Define pruning functions ##########
+def pruning_method_1(model, pruning_factor):
     """
-    Prune the first convolutional layer and the first 
-    linear layer in the output layer using unstructured pruning 
+    Prune the first convolutional layer and the first
+    linear layer in the output layer using unstructured pruning
     with L1 norm.
     """
-    pass
+    conv_layer = model.features[0]
+    prune.l1_unstructured(conv_layer, name="weight", amount=pruning_factor)
 
+    lin_layer = model.fc[0]
+    prune.l1_unstructured(lin_layer, name="weight", amount=pruning_factor)
+
+
+def pruning_method_2(model, pruning_factor):
+    """
+    Prune only the first linear layer in the output layer using
+    unstructured pruning with L1 norm.
+    """
+    lin_layer = model.fc[0]
+    prune.l1_unstructured(lin_layer, name="weight", amount=pruning_factor)
+
+
+def pruning_method_3(model, pruning_factor):
+    """
+    Prune the first convolutional layer using structured pruning
+    with the L2 norm along dim 0.
+    """
+    conv_layer = model.features[0]
+    prune.ln_structured(conv_layer, name="weight", amount=pruning_factor, n=2, dim=0)
+
+
+### Experiment jobs
 def create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name):
 
     exp_out_file = os.path.join(exp_out_folder, "baseline")
@@ -284,10 +327,46 @@ def create_baseline_experiment_result(logger, game, exp_out_folder, params_file_
         model_params_file_name=params_file_name,
         exp_out_file=exp_out_file,
         pruning_function=None,
-        exp_info="Baseline performance, no pruning was done.",
+        experiment_info="Baseline performance, no pruning was done.",
     )
 
-    pruning_experiment.perform_multiple_experiments([0.00])
+    pruning_experiment.perform_single_experiment(0.00)
+
+
+def run_experiment_with_params(params):
+    # Extract individual parameters from the dictionary
+    logger = setup_logger()
+    game = params["game"]
+    exp_out_folder = params["exp_out_folder"]
+    exp_out_file_name = params["exp_out_file_name"]
+    params_file_name = params["params_file_name"]
+    pruning_function = params["pruning_function"]
+    if "experiment_info" in params:
+        experiment_info = params["experiment_info"]
+    else:
+        experiment_info = pruning_function.__doc__
+
+    logger.info(f"Initializing experiment: {exp_out_file_name}")
+
+    ### Setup and run pruning experiment
+    exp_out_file = os.path.join(exp_out_folder, exp_out_file_name)
+
+    seed_everything(0)
+
+    pruning_experiment = PruningExperiment(
+        logger=logger,
+        game=game,
+        model_params_file_name=params_file_name,
+        exp_out_file=exp_out_file,
+        pruning_function=pruning_function,
+        experiment_info=experiment_info,
+    )
+
+    pruning_experiment.perform_multiple_experiments(
+        [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
+    )
+
+    return True
 
 
 def main():
@@ -300,16 +379,44 @@ def main():
 
     exp_out_folder = os.path.join(default_save_folder, "pruning_exp")
     Path(exp_out_folder).mkdir(parents=True, exist_ok=True)
-    # exp_out_file = os.path.join(exp_out_folder, "pruning_results")
-    exp_out_file = os.path.join(exp_out_folder, "baseline")
+
+    # exp_out_file = os.path.join(exp_out_folder, "baseline")
 
     seed_everything(0)
     logger = setup_logger(game)
 
-    create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name)
+    # create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name)
 
-    # pruning_experiment.perform_multiple_experiments([0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5])
+    exp_1_params = {
+        "game": game,
+        "exp_out_folder": exp_out_folder,
+        "exp_out_file_name": "pruning_results_1",
+        "params_file_name": params_file_name,
+        "pruning_function": pruning_method_1,
+    }
 
+    exp_2_params = {
+        "game": game,
+        "exp_out_folder": exp_out_folder,
+        "exp_out_file_name": "pruning_results_2",
+        "params_file_name": params_file_name,
+        "pruning_function": pruning_method_2,
+    }
+
+    exp_3_params = {
+        "game": game,
+        "exp_out_folder": exp_out_folder,
+        "exp_out_file_name": "pruning_results_3",
+        "params_file_name": params_file_name,
+        "pruning_function": pruning_method_3,
+    }
+
+    experiment_params = [exp_1_params, exp_2_params, exp_3_params]
+
+    with multiprocessing.Pool(initializer=setup_logger) as pool:
+        statuses = list(pool.map(run_experiment_with_params, experiment_params))
+
+    logger.info(f"Parallel pruning status: {str(statuses)}")
 
     handlers = logger.handlers[:]
     for handler in handlers:
