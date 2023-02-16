@@ -376,11 +376,11 @@ class AgentDQN:
         stats = {}
 
         if len(vector) > 0:
-            stats["min"] = np.min(vector)
-            stats["max"] = np.max(vector)
-            stats["mean"] = np.mean(vector)
-            stats["median"] = np.median(vector)
-            stats["std"] = np.std(vector)
+            stats["min"] = np.nanmin(vector)
+            stats["max"] = np.nanmax(vector)
+            stats["mean"] = np.nanmean(vector)
+            stats["median"] = np.nanmedian(vector)
+            stats["std"] = np.nanstd(vector)
 
         else:
             stats["min"] = None

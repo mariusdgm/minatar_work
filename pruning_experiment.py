@@ -94,11 +94,11 @@ class PruningExperiment:
         stats = {}
 
         if len(vector) > 0:
-            stats["min"] = np.min(vector)
-            stats["max"] = np.max(vector)
-            stats["mean"] = np.mean(vector)
-            stats["median"] = np.median(vector)
-            stats["std"] = np.std(vector)
+            stats["min"] = np.nanmin(vector)
+            stats["max"] = np.nanmax(vector)
+            stats["mean"] = np.nanmean(vector)
+            stats["median"] = np.nanmedian(vector)
+            stats["std"] = np.nanstd(vector)
 
         else:
             stats["min"] = None
@@ -132,10 +132,6 @@ class PruningExperiment:
         if random_action:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
             return action
-
-        # Epsilon-greedy behavior policy for action selection
-        if not epsilon:
-            epsilon = self.epsilon_by_frame(t)
 
         if np.random.binomial(1, epsilon) == 1:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
@@ -368,25 +364,7 @@ def run_experiment_with_params(params):
 
     return True
 
-
-def main():
-    game = "breakout"
-
-    # build path to trained model params
-    proj_dir = os.path.abspath(".")
-    default_save_folder = os.path.join(proj_dir, "checkpoints", game)
-    params_file_name = os.path.join(default_save_folder, game + "_model")
-
-    exp_out_folder = os.path.join(default_save_folder, "pruning_exp")
-    Path(exp_out_folder).mkdir(parents=True, exist_ok=True)
-
-    # exp_out_file = os.path.join(exp_out_folder, "baseline")
-
-    seed_everything(0)
-    logger = setup_logger(game)
-
-    # create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name)
-
+def run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_name):
     exp_1_params = {
         "game": game,
         "exp_out_folder": exp_out_folder,
@@ -417,6 +395,26 @@ def main():
         statuses = list(pool.map(run_experiment_with_params, experiment_params))
 
     logger.info(f"Parallel pruning status: {str(statuses)}")
+
+def main():
+    game = "breakout"
+
+    # build path to trained model params
+    proj_dir = os.path.abspath(".")
+    default_save_folder = os.path.join(proj_dir, "checkpoints", game)
+    params_file_name = os.path.join(default_save_folder, game + "_model")
+
+    exp_out_folder = os.path.join(default_save_folder, "pruning_exp")
+    Path(exp_out_folder).mkdir(parents=True, exist_ok=True)
+
+    # exp_out_file = os.path.join(exp_out_folder, "baseline")
+
+    seed_everything(0)
+    logger = setup_logger(game)
+
+    # create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name)
+
+    run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_name)
 
     handlers = logger.handlers[:]
     for handler in handlers:
