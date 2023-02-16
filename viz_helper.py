@@ -92,6 +92,18 @@ def load_pruning_experiment_data(pruning_exp_file):
 
 
 def get_df_of_pruning_stats(stats, stat_name):
+    """Transform dict of experimental stats to dataframe.
+    
+    Args:
+        stats: dict with statistics of experiment with the following structure:
+               pruning_value: dict with episodic rewards stats, episodic length stats etc. 
+               The stats are the mean, median, std, min and max of the vector of values 
+               that was generated during the experiment.
+        stat_name: which statistics to plot (ex: 'episode_rewards', 'episode_rewards')
+
+    Returns:
+        Pandas Dataframe with the statistic of interest for each pruning value in the experiment
+    """
     x_idx = []
     stat_records = []
 
@@ -126,9 +138,6 @@ def plot_pruning_stat(stats, stat_name, title=None):
         elinewidth=3,
         label=std_label,
     )
-
-    # plt.plot(df.index, df["min"], "ro", markersize=4, label="Minimum")
-    # plt.plot(df.index, df["max"], "ro", markersize=4, label="Maximum")
 
     for i in df.index:
         plt.vlines(
