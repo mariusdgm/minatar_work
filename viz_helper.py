@@ -112,6 +112,11 @@ def plot_pruning_stat(stats, stat_name, title=None):
 
     sns.catplot(x="pruning_factor", y="mean", kind="box", data=df, showfliers=False)
 
+    std_label = "Standard Deviation"
+    minmax_label = "Minimum/Maximum"
+    median_label = "Median"
+    mean_label = "Mean"
+
     plt.errorbar(
         x=df.index,
         y=df["mean"],
@@ -119,10 +124,11 @@ def plot_pruning_stat(stats, stat_name, title=None):
         fmt="none",
         ecolor="black",
         elinewidth=3,
+        label=std_label,
     )
 
-    plt.plot(df.index, df["min"], "ro", markersize=4)
-    plt.plot(df.index, df["max"], "ro", markersize=4)
+    # plt.plot(df.index, df["min"], "ro", markersize=4, label="Minimum")
+    # plt.plot(df.index, df["max"], "ro", markersize=4, label="Maximum")
 
     for i in df.index:
         plt.vlines(
@@ -145,10 +151,38 @@ def plot_pruning_stat(stats, stat_name, title=None):
             xmax=i + 0.3,
             color="black",
             linewidth=1.5,
+            label=median_label,
         )
         plt.hlines(
-            y=df.loc[i, "median"], xmin=i - 0.3, xmax=i + 0.3, color="red", linewidth=1
+            y=df.loc[i, "median"],
+            xmin=i - 0.3,
+            xmax=i + 0.3,
+            color="red",
+            linewidth=1,
+            label=mean_label,
         )
+        plt.hlines(
+            y=df.loc[i, "min"],
+            xmin=i - 0.2,
+            xmax=i + 0.2,
+            color="blue",
+            linestyle="--",
+        )
+        plt.hlines(
+            y=df.loc[i, "max"],
+            xmin=i - 0.2,
+            xmax=i + 0.2,
+            color="blue",
+            linestyle="--",
+        )
+
+    handles = [
+        plt.errorbar([], [], label=std_label),
+        plt.hlines([], [], [], color="red", linewidth=1, label=median_label),
+        plt.hlines([], [], [], color="black", linewidth=1, label=mean_label),
+        plt.vlines([], [], [], color="blue", linestyle="--", label=minmax_label),
+    ]
+    plt.legend(handles=handles, loc="upper right")
 
     plt.title(title)
 
@@ -161,7 +195,7 @@ def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
     baseline_pruning_stats, baseline_exp_info = load_pruning_experiment_data(
         baseline_log_file_name
     )
-   
+
     # load experiment
     pruning_stats, exp_info = load_pruning_experiment_data(pruning_log_file_name)
 
@@ -174,18 +208,18 @@ def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
 
     plot_pruning_stat(pruning_stats, "episode_rewards", "Episodic rewards")
     plot_pruning_stat(pruning_stats, "episode_frames", "Episodic length")
-    # plot_pruning_stat(pruning_stats, "episode_max_qs", "Episodic max q val")
+    plot_pruning_stat(pruning_stats, "episode_max_qs", "Episodic max q val")
 
 
 if __name__ == "__main__":
-    game = "breakout"
+    game = "freeway"
     proj_dir = os.path.dirname(os.path.abspath(__file__))
     default_save_folder = os.path.join(proj_dir, "checkpoints", game)
     train_log_file_name = os.path.join(default_save_folder, game + "_train_stats")
 
     baseline_file_path = os.path.join(default_save_folder, "pruning_exp", "baseline")
     pruning_log_file_name = os.path.join(
-        default_save_folder, "pruning_exp", "pruning_results_1"
+        default_save_folder, "pruning_exp", "pruning_results_3"
     )
 
     # plot_training_info(train_log_file_name)
