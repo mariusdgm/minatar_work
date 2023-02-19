@@ -31,12 +31,6 @@ device = "cpu"
 
 # date -> game_model_parameter -> folder_seed -> logs, replay buffer, checkpoints, models, config file
 
-# TODO
-# change training iteration stop, instead of making reinit of env when validation starts, 
-# instead use 2 evs, one for training and one for valiation epoch
-# 
-# next training epoch starts where it left off 
-
 # TODO 
 # TODO: increase network by adding one extra conv
 
@@ -663,13 +657,15 @@ def main():
     Path(checkpoint_folder).mkdir(parents=True, exist_ok=True)
     Path(logs_path).mkdir(parents=True, exist_ok=True)
 
-    env = Environment(args.game)
+    train_env = Environment(args.game, random_seed=0)
+    validation_env = Environment(args.game, random_seed=0)
 
     train_logger = setup_logger(args.game, logs_path)
 
     # print("Cuda available?: " + str(torch.cuda.is_available()))
     my_agent = AgentDQN(
-        env=env,
+        train_env=train_env,
+        validation_env=validation_env,
         model_file=model_file_name,
         replay_buffer_file=replay_buffer_file,
         train_stats_file=train_stats_file,
