@@ -94,7 +94,8 @@ def get_state(s):
 class AgentDQN:
     def __init__(
         self,
-        env,
+        train_env,
+        validation_env,
         model_file=None,
         replay_buffer_file=None,
         train_stats_file=None,
@@ -102,7 +103,8 @@ class AgentDQN:
         logger=None,
     ) -> None:
 
-        self.env = env
+        self.train_env = train_env
+        self.validation_env = validation_env
 
         self.model_file = model_file
         self.replay_buffer_file = replay_buffer_file
@@ -465,8 +467,8 @@ class AgentDQN:
         max_qs = []
 
         # Initialize the environment and start state
-        self.env.reset()
-        s = get_state(self.env.state())
+        self.validation_env.reset()
+        s = get_state(self.validation_env.state())
 
         is_terminated = False
         while (
@@ -479,10 +481,10 @@ class AgentDQN:
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epslion
             )
-            reward, is_terminated = self.env.act(action)
+            reward, is_terminated = self.validation_env.act(action)
             reward = torch.tensor([[reward]], device=device).float()
             is_terminated = torch.tensor([[is_terminated]], device=device)
-            s_prime = get_state(self.env.state())
+            s_prime = get_state(self.validation_env.state())
 
             max_qs.append(max_q)
 
@@ -511,9 +513,7 @@ class AgentDQN:
         losses = []
         max_qs = []
 
-        # Initialize the environment and start state
-        self.env.reset()
-        s = get_state(self.env.state())
+        s = get_state(self.train_env.state())
 
         is_terminated = False
         while (
@@ -524,10 +524,10 @@ class AgentDQN:
         ):
 
             action, max_q = self.select_action(s, self.t, self.num_actions)
-            reward, is_terminated = self.env.act(action)
+            reward, is_terminated = self.train_env.act(action)
             reward = torch.tensor([[reward]], device=device).float()
             is_terminated = torch.tensor([[is_terminated]], device=device)
-            s_prime = get_state(self.env.state())
+            s_prime = get_state(self.train_env.state())
 
             self.replay_buffer.append(s, action, reward, s_prime, is_terminated)
       
@@ -563,6 +563,11 @@ class AgentDQN:
 
             # Continue the process
             s = s_prime
+
+        if is_terminated:
+            # reset env to prepare it for next iteration, 
+            # if env is not done then keep the current state for next training epoch
+            self.train_env.reset()
 
         # end of episode, return episode statistics:
         return (
