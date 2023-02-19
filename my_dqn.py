@@ -18,26 +18,44 @@ from minatar import Environment
 from replay_buffer import ReplayBuffer
 from utils import seed_everything, setup_logger
 
+# NICE TO HAVE: gpu device at: model, wrapper of environment (in my case it would be get_state...),
+# maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
+
+
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 
-# un exp cu conv + lin 1
-# un exp cu lin 1
-# un exp cu l1, unul cu l2 norm - no l2_unstructured implemented
-# un exp cu structured, dim 0
+# TODO: learn about Liftoff at a future date :)
+
+# recommended experiment structure:
+
+# date -> game_model_parameter -> folder_seed -> logs, replay buffer, checkpoints, models, config file
+
+# TODO
+# change training iteration stop, instead of making reinit of env when validation starts, 
+# instead use 2 evs, one for training and one for valiation epoch
+# 
+# next training epoch starts where it left off 
+
+# TODO 
+# TODO: increase network by adding one extra conv
 
 class Conv_QNet(nn.Module):
-    def __init__(self, in_features, in_channels, num_actions):
+    def __init__(self, in_features, in_channels, num_actions, width_multiplicator=1):
         super().__init__()
 
         self.in_features = in_features
         self.in_channels = in_channels
         self.num_actions = num_actions
 
+        self.conv_out_size = width_multiplicator * 16
+
         # conv layers
         self.features = nn.Sequential(
-            nn.Conv2d(self.in_channels, 16, kernel_size=3, stride=1),
+            nn.Conv2d(self.in_channels, self.conv_out_size, kernel_size=3, stride=1),
             nn.ReLU(),
+            nn.Conv2d(self.conv_out_size, self.conv_out_size, kernel_size=3, stride=1),
+            nn.ReLU()
         )
 
         self.fc = nn.Sequential(

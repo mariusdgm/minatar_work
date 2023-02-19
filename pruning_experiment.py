@@ -63,7 +63,7 @@ class PruningExperiment:
         seed_everything(0)
 
         # get env dimensions
-        self.env = Environment(self.game)
+        self.env = Environment(self.game, random_seed=0)
         state_shape = self.env.state_shape()
 
         self.in_features = (state_shape[2], state_shape[0], state_shape[1])
@@ -277,11 +277,11 @@ class PruningExperiment:
 
         return validation_stats
 
-
+# TODO: change these 
 ########## Define pruning functions ##########
 def pruning_method_1(model, pruning_factor):
     """
-    Prune the first convolutional layer and the first
+    Prune the second convolutional layer and the first
     linear layer in the output layer using unstructured pruning
     with L1 norm.
     """
@@ -294,16 +294,22 @@ def pruning_method_1(model, pruning_factor):
 
 def pruning_method_2(model, pruning_factor):
     """
-    Prune only the first linear layer in the output layer using
+    Prune all feature extractor and the first linear layer
     unstructured pruning with L1 norm.
     """
     lin_layer = model.fc[0]
     prune.l1_unstructured(lin_layer, name="weight", amount=pruning_factor)
 
-
-def pruning_method_3(model, pruning_factor):
+def pruning_method_3():
     """
-    Prune the first convolutional layer using structured pruning
+    Prune all layers using
+    unstructured pruning with L1 norm.
+    """
+    pass
+
+def pruning_method_4(model, pruning_factor):
+    """
+    Prune all feature extractor using structured pruning
     with the L2 norm along dim 0.
     """
     conv_layer = model.features[0]
@@ -397,7 +403,7 @@ def run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_na
     logger.info(f"Parallel pruning status: {str(statuses)}")
 
 def main():
-    game = "breakout"
+    game = "freeway"
 
     # build path to trained model params
     proj_dir = os.path.abspath(".")
@@ -412,7 +418,7 @@ def main():
     seed_everything(0)
     logger = setup_logger(game)
 
-    # create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name)
+    create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name)
 
     run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_name)
 
@@ -424,3 +430,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# setting for torch and numpy  
+# OMP_NUM_THREADS=2 python <script>  

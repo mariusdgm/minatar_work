@@ -117,8 +117,8 @@ def get_df_of_pruning_stats(stats, stat_name):
 
     return df
 
-
-def plot_pruning_stat(stats, stat_name, title=None):
+# TODO handle plotting min and max
+def plot_pruning_stat(stats, stat_name, title=None, show=False, plot_min_max=False):
 
     df = get_df_of_stat(stats, stat_name=stat_name)
 
@@ -195,8 +195,10 @@ def plot_pruning_stat(stats, stat_name, title=None):
 
     plt.title(title)
 
-    plt.show()
+    if show:
+        plt.show()
 
+# TODO: also make function for comparison at same pruning value
 
 def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
 
@@ -219,16 +221,18 @@ def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
     plot_pruning_stat(pruning_stats, "episode_frames", "Episodic length")
     plot_pruning_stat(pruning_stats, "episode_max_qs", "Episodic max q val")
 
+    plt.show()
+
 
 if __name__ == "__main__":
-    game = "freeway"
+    game = "breakout"
     proj_dir = os.path.dirname(os.path.abspath(__file__))
     default_save_folder = os.path.join(proj_dir, "checkpoints", game)
     train_log_file_name = os.path.join(default_save_folder, game + "_train_stats")
 
     baseline_file_path = os.path.join(default_save_folder, "pruning_exp", "baseline")
     pruning_log_file_name = os.path.join(
-        default_save_folder, "pruning_exp", "pruning_results_3"
+        default_save_folder, "pruning_exp", "pruning_results_1"
     )
 
     # plot_training_info(train_log_file_name)
