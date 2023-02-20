@@ -14,8 +14,8 @@ from pathlib import Path
 import argparse
 
 from minatar import Environment
-from my_dqn import Conv_QNet
-from utils import seed_everything, setup_logger
+from minatar_dqn.my_dqn import Conv_QNet
+from minatar_dqn.utils.logging import seed_everything, setup_logger
 
 import multiprocessing
 

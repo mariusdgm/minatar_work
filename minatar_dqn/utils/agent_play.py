@@ -9,7 +9,7 @@ import torch
 import numpy as np
 import random
 
-from my_dqn import get_state, Conv_QNet
+from minatar_dqn.my_dqn import get_state, Conv_QNet
 
 
 def get_action_from_model(model, state):

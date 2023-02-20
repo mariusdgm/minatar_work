@@ -7,70 +7,21 @@ import os
 from pathlib import Path
 import argparse
 
-import torch.autograd as autograd
-import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import torch.autograd as autograd
 
 from minatar import Environment
 
-from replay_buffer import ReplayBuffer
-from utils import seed_everything, setup_logger
+from minatar_dqn.replay_buffer import ReplayBuffer
+from minatar_dqn.utils.logging import seed_everything, setup_logger
 
-# NICE TO HAVE: gpu device at: model, wrapper of environment (in my case it would be get_state...),
+# TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
-
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 
-# TODO: learn about Liftoff at a future date :)
-
-# recommended experiment structure:
-
-# date -> game_model_parameter -> folder_seed -> logs, replay buffer, checkpoints, models, config file
-
-# TODO 
-# TODO: increase network by adding one extra conv
-
-class Conv_QNet(nn.Module):
-    def __init__(self, in_features, in_channels, num_actions, width_multiplicator=1):
-        super().__init__()
-
-        self.in_features = in_features
-        self.in_channels = in_channels
-        self.num_actions = num_actions
-
-        self.conv_out_size = width_multiplicator * 16
-
-        # conv layers
-        self.features = nn.Sequential(
-            nn.Conv2d(self.in_channels, self.conv_out_size, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(self.conv_out_size, self.conv_out_size, kernel_size=3, stride=1),
-            nn.ReLU()
-        )
-
-        self.fc = nn.Sequential(
-            nn.Linear(self.size_linear_unit(), 128),
-            nn.ReLU(),
-            nn.Linear(128, self.num_actions),
-        )
-
-    def size_linear_unit(self):
-        return (
-            self.features(autograd.torch.zeros(*self.in_features)).view(1, -1).size(1)
-        )
-
-    def forward(self, x):
-        x = x.float()
-        x = self.features(x)
-        x = x.reshape(x.size(0), -1)
-        x = self.fc(x)
-        return x
-
-
+# TODO: Maybe implement this as wrapper for env?
 def get_state(s):
     """
     Converts the state given by the environment to a tensor of size (in_channel, 10, 10), and then
@@ -181,10 +132,16 @@ class AgentDQN:
 
     def _init_models(self):
         self.policy_model = Conv_QNet(
-            self.in_features, self.in_channels, self.num_actions
+            self.in_features,
+            self.in_channels,
+            self.num_actions,
+            self.width_multiplicator,
         )
         self.target_model = Conv_QNet(
-            self.in_features, self.in_channels, self.num_actions
+            self.in_features,
+            self.in_channels,
+            self.num_actions,
+            self.width_multiplicator,
         )
 
         self.optimizer = optim.Adam(
@@ -248,7 +205,7 @@ class AgentDQN:
         self.logger.debug(f"Training status saved at t = {self.t}")
 
     def select_action(self, state, t, num_actions, epsilon=None, random_action=False):
-        max_q = np.nan 
+        max_q = np.nan
 
         # A uniform random policy
         if random_action:
@@ -314,8 +271,9 @@ class AgentDQN:
             self.logger.info(f"Epoch {epoch} completed in {epoch_time}")
             self.logger.info("\n")
 
-
-        self.logger.info(f"Ended training session after {train_epochs} epochs at t = {self.t}")
+        self.logger.info(
+            f"Ended training session after {train_epochs} epochs at t = {self.t}"
+        )
 
     def train_epoch(self):
         self.logger.info(f"Starting training epoch at t = {self.t}")
@@ -524,7 +482,7 @@ class AgentDQN:
             s_prime = get_state(self.train_env.state())
 
             self.replay_buffer.append(s, action, reward, s_prime, is_terminated)
-      
+
             max_qs.append(max_q)
 
             # Start learning when there's enough data and when we can sample a batch of size BATCH_SIZE
@@ -559,7 +517,7 @@ class AgentDQN:
             s = s_prime
 
         if is_terminated:
-            # reset env to prepare it for next iteration, 
+            # reset env to prepare it for next iteration,
             # if env is not done then keep the current state for next training epoch
             self.train_env.reset()
 
@@ -575,7 +533,7 @@ class AgentDQN:
 
     def display_training_epoch_info(self, stats):
         self.logger.info(
-            "TRAINING STATS" 
+            "TRAINING STATS"
             + " | Frames seen: "
             + str(self.t)
             + " | Episode: "
@@ -596,7 +554,7 @@ class AgentDQN:
 
     def display_validation_epoch_info(self, stats):
         self.logger.info(
-            "VALIDATION STATS" 
+            "VALIDATION STATS"
             + " | Max reward: "
             + str(stats["episode_rewards"]["max"])
             + " | Avg reward: "
@@ -634,7 +592,11 @@ class AgentDQN:
 
         return loss.item()
 
-def main():
+
+# recommended experiment structure:
+
+
+def classic_experiment():
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", "-g", type=str, default="freeway")
     parser.add_argument("--checkpoint_folder", "-c", type=str)
@@ -657,8 +619,8 @@ def main():
     Path(checkpoint_folder).mkdir(parents=True, exist_ok=True)
     Path(logs_path).mkdir(parents=True, exist_ok=True)
 
-    train_env = Environment(args.game, random_seed=0)
-    validation_env = Environment(args.game, random_seed=0)
+    train_env = build_environment(game_name=args.game, random_seed=0)
+    validation_env = build_environment(game_name=args.game, random_seed=0)
 
     train_logger = setup_logger(args.game, logs_path)
 
@@ -680,8 +642,36 @@ def main():
         handler.close()
 
 
+# date -> game_model_parameter -> folder_seed -> logs, replay buffer, checkpoints, models, config file
+
+
+def build_environment(game_name, random_seed):
+    """Wrapper function for creating a simulation environment.
+
+    Args:
+        game_name: the name of the environment
+        random_seed: seed to be used for initializaion
+
+    Returns:
+        Environment object that implements functions for step wise simulation and reward returns.
+
+    For more information check MinAtar documentation
+    """
+
+    return Environment(game_name, random_seed)
+
+
+def start_training_experiment(agent_descriptor, model_descriptor, environment_descriptor):
+    """Routine for training a single model on an environment."""
+    pass
+
+
+def main():
+    pass
+
+
 if __name__ == "__main__":
-    
+
     seed_everything(0)
     main()
     # play_game_visual("breakout")
