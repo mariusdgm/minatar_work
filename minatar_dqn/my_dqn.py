@@ -60,23 +60,16 @@ class AgentDQN:
         self.train_step_cnt = 200_000
         self.validation_enabled = True
         self.validation_step_cnt = 100_000
-        self.validation_epslion = 0.001
+        self.validation_epsilon = 0.001
         self.episode_termination_limit = 10_000
 
         self.replay_start_size = 5000
         self.epsilon_by_frame = self._get_linear_decay_function(
             start=1.0, end=0.01, decay=250_000, eps_decay_start=self.replay_start_size
         )
-        self.gamma = 0.99  # discount rate
+        self.gamma = 0.99  
 
-        # returns state as [w, h, channels]
-        state_shape = env.state_shape()
-
-        # permute to get batch, channel, w, h shape
-        # specific to minatar
-        self.in_features = (state_shape[2], state_shape[0], state_shape[1])
-        self.in_channels = self.in_features[0]
-        self.num_actions = env.num_actions()
+        self._init_envs() # sets up in_features etc...
 
         self.replay_buffer = ReplayBuffer(
             max_size=100_000,
@@ -114,14 +107,22 @@ class AgentDQN:
     def _get_exp_decay_function(self, start, end, decay):
         return lambda x: end + (start - end) * np.exp(-1.0 * x / decay)
 
-    def _get_linear_decay_function(self, start, end, decay, eps_decay_start):
+    def _get_linear_decay_function(self, start, end, decay, eps_decay_start=None):
         """Return a function that enables getting the value of epsilon at step x.
 
         Args:
             start (float): start value of the epsilon function (x=0)
-            end (float): end value of the epsilon function (x=decay_in)
-            decay_in (int): how many steps to reach the end value
+            end (float): end value of the epsilon function (x=decay)
+            decay (int): how many steps to reach the end value
+            eps_decay_start: after how many frames to actually start decaying,
+                            uses self.replay_start_size by default
+
+        Returns: 
+            function to compute the epsillon based on current frame counter
         """
+        if not eps_decay_start:
+            eps_decay_start = self.replay_start_size
+
         return lambda x: max(
             end, min(start, start - (start - end) * ((x - eps_decay_start) / decay))
         )
@@ -147,6 +148,21 @@ class AgentDQN:
         self.optimizer = optim.Adam(
             self.policy_model.parameters(), lr=0.0000625, eps=0.00015
         )
+
+    def _init_envs(self):
+        """Read dimensions of the input and output of the simulation environment"""
+        # returns state as [w, h, channels]
+        state_shape = self.train_env.state_shape()
+
+        # permute to get batch, channel, w, h shape
+        # specific to minatar
+        self.in_features = (state_shape[2], state_shape[0], state_shape[1])
+        self.in_channels = self.in_features[0]
+        self.num_actions = self.train_env.num_actions()
+
+        self.train_env.reset()
+        self.validation_env.reset()
+
 
     def load_training_state(
         self, models_load_file, replay_buffer_file, training_stats_file
@@ -431,7 +447,7 @@ class AgentDQN:
         ):
 
             action, max_q = self.select_action(
-                s, self.t, self.num_actions, epsilon=self.validation_epslion
+                s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
             reward, is_terminated = self.validation_env.act(action)
             reward = torch.tensor([[reward]], device=device).float()

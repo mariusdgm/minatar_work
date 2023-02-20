@@ -2,20 +2,20 @@ import torch.autograd as autograd
 import torch.nn as nn
 
 class Conv_QNet(nn.Module):
-    def __init__(self, in_features, in_channels, num_actions, width_multiplicator=1):
+    def __init__(self, in_features, in_channels, num_actions, conv_hidden_out_size):
         super().__init__()
 
         self.in_features = in_features
         self.in_channels = in_channels
         self.num_actions = num_actions
 
-        self.conv_out_size = width_multiplicator * 16
+        self.conv_hidden_out_size = conv_hidden_out_size
 
         # conv layers
         self.features = nn.Sequential(
-            nn.Conv2d(self.in_channels, self.conv_out_size, kernel_size=3, stride=1),
+            nn.Conv2d(self.in_channels, self.conv_hidden_out_size, kernel_size=3, stride=1),
             nn.ReLU(),
-            nn.Conv2d(self.conv_out_size, self.conv_out_size, kernel_size=3, stride=1),
+            nn.Conv2d(self.conv_hidden_out_size, self.conv_hidden_out_size, kernel_size=3, stride=1),
             nn.ReLU(),
         )
 

@@ -1,0 +1,37 @@
+agent_params:
+  agent: AgentDQN
+  args_:
+    train_step_cnt: 200_000
+    validation_enabled: True
+    validation_step_cnt: 100_000
+    validation_epsilon: 0.001
+    episode_termination_limit: 10_000
+    replay_start_size: 5_000
+    
+    batch_size: 32
+    training_freq: 4
+    target_model_update_freq: 100
+    loss_fcn: mse_loss
+
+    gamma: 0.99 
+    epsilon:
+      start: 1.0
+      end: 0.01
+      decay: 250_000
+
+estimator:
+  model: Conv_QNET
+  args_:
+    conv_hidden_out_size: 16
+
+optim:
+  name: Adam
+  args_:
+    lr: 0.0000625
+    eps: 0.00015
+
+replay_buffer:
+  max_size: 100_000
+  action_dim: 1
+  n_step: 0
+
