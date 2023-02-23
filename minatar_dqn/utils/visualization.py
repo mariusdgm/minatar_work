@@ -9,7 +9,6 @@ import torch
 
 import pandas as pd
 
-
 def load_training_stats(training_stats_file):
     checkpoint = torch.load(training_stats_file)
 
@@ -20,6 +19,20 @@ def load_training_stats(training_stats_file):
 
 
 def get_df_of_stat(stats, stat_name):
+    frame_stamps = []
+    stat_records = []
+
+    for epoch_stats in stats:
+        frame_stamps.append(epoch_stats["frame_stamp"])
+        stat_records.append(epoch_stats[stat_name])
+
+    df = pd.DataFrame.from_records(stat_records, index=frame_stamps)
+    df = df.reset_index()
+    df = df.rename(columns={"index": "frames"}) 
+
+    return df
+
+def get_df_of_stat_pruning(stats, stat_name):
     x_idx = []
     stat_records = []
 
@@ -117,10 +130,9 @@ def get_df_of_pruning_stats(stats, stat_name):
 
     return df
 
-# TODO handle plotting min and max
 def plot_pruning_stat(stats, stat_name, title=None, show=False, plot_min_max=False):
 
-    df = get_df_of_stat(stats, stat_name=stat_name)
+    df = get_df_of_stat_pruning(stats, stat_name=stat_name)
 
     sns.catplot(x="pruning_factor", y="mean", kind="box", data=df, showfliers=False)
 
@@ -225,18 +237,19 @@ def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
 
 
 if __name__ == "__main__":
-    game = "breakout"
-    proj_dir = os.path.dirname(os.path.abspath(__file__))
-    default_save_folder = os.path.join(proj_dir, "checkpoints", game)
-    train_log_file_name = os.path.join(default_save_folder, game + "_train_stats")
+    
+    experiment_folder = r"D:\Work\PhD\minatar_work\experiments\training\outputs\2023_02_23-23_29_23\exp1\breakout\0"
 
-    baseline_file_path = os.path.join(default_save_folder, "pruning_exp", "baseline")
-    pruning_log_file_name = os.path.join(
-        default_save_folder, "pruning_exp", "pruning_results_1"
-    )
+    train_log_file_name = os.path.join(experiment_folder, "exp1_breakout_0_train_stats")
 
-    # plot_training_info(train_log_file_name)
 
-    plot_pruning_experiment_data(baseline_file_path, pruning_log_file_name)
+    # baseline_file_path = os.path.join(default_save_folder, "pruning_exp", "baseline")
+    # pruning_log_file_name = os.path.join(
+    #     default_save_folder, "pruning_exp", "pruning_results_1"
+    # )
+
+    plot_training_info(train_log_file_name)
+
+    # plot_pruning_experiment_data(baseline_file_path, pruning_log_file_name)
 
     plt.show()

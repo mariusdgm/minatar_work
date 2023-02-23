@@ -9,7 +9,7 @@ import torch
 import numpy as np
 import random
 
-from minatar_dqn.my_dqn import get_state, Conv_QNet
+from minatar_dqn.my_dqn import get_state, Conv_QNET
 
 
 def get_action_from_model(model, state):
@@ -41,7 +41,7 @@ def play_game_visual(game):
     in_channels = in_features[0]
     num_actions = env.num_actions()
 
-    model = Conv_QNet(in_features, in_channels, num_actions)
+    model = Conv_QNET(in_features, in_channels, num_actions)
     checkpoint = torch.load(file_name)
     model.load_state_dict(checkpoint["policy_model_state_dict"])
 

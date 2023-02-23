@@ -14,7 +14,7 @@ from pathlib import Path
 import argparse
 
 from minatar import Environment
-from minatar_dqn.my_dqn import Conv_QNet
+from minatar_dqn.my_dqn import Conv_QNET
 from minatar_dqn.utils.my_logging import seed_everything, setup_logger
 
 import multiprocessing
@@ -70,7 +70,7 @@ class PruningExperiment:
         self.in_channels = self.in_features[0]
         self.num_actions = self.env.num_actions()
 
-        self.model = Conv_QNet(self.in_features, self.in_channels, self.num_actions)
+        self.model = Conv_QNET(self.in_features, self.in_channels, self.num_actions)
 
         self.load_model_params()
 
@@ -397,13 +397,14 @@ def run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_na
 
     experiment_params = [exp_1_params, exp_2_params, exp_3_params]
 
-    with multiprocessing.Pool(initializer=setup_logger) as pool:
+    # initializer=setup_logger
+    with multiprocessing.Pool() as pool:
         statuses = list(pool.map(run_experiment_with_params, experiment_params))
 
     logger.info(f"Parallel pruning status: {str(statuses)}")
 
 def main():
-    game = "freeway"
+    game = "breakout"
 
     # build path to trained model params
     proj_dir = os.path.abspath(".")

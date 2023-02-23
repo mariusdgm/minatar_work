@@ -15,7 +15,7 @@ from minatar import Environment
 from minatar_dqn.replay_buffer import ReplayBuffer
 from experiments.experiment_setup import seed_everything
 from minatar_dqn.utils.my_logging import setup_logger
-from minatar_dqn.models import Conv_QNet
+from minatar_dqn.models import Conv_QNET
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
@@ -64,7 +64,7 @@ class AgentDQN:
 
         self._load_config_settings(config)
 
-        self._init_models()  # init policy, target and optim
+        self._init_models(config)  # init policy, target and optim
 
         # Set initial values related to training and monitoring
         self.t = 0  # frame nr
@@ -136,6 +136,8 @@ class AgentDQN:
             n_step=buffer_settings.get("n_step", 0),
         )
 
+        self.logger.info("Loaded configuration settings.")
+
     def _get_exp_decay_function(self, start, end, decay):
         return lambda x: end + (start - end) * np.exp(-1.0 * x / decay)
 
@@ -165,27 +167,33 @@ class AgentDQN:
 
     def _init_models(self, config):
         estimator_settings = config.get(
-            "estimator", {"model": "Conv_QNet", "args_": {}}
+            "estimator", {"model": "Conv_QNET", "args_": {}}
         )
 
-        if estimator_settings["model"] is "Conv_QNet":
-            self.policy_model = Conv_QNet(
+        if estimator_settings["model"] == "Conv_QNET":
+            self.policy_model = Conv_QNET(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
                 **estimator_settings["args_"],
             )
-            self.target_model = Conv_QNet(
+            self.target_model = Conv_QNET(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
                 **estimator_settings["args_"],
             )
+        else:
+            estiamtor_name = estimator_settings["model"]
+            raise ValueError(f"Could not setup estimator. Tried with: {estiamtor_name}")
 
         optimizer_settings = config.get("optim", {"name": "Adam", "args_": {}})
         self.optimizer = optim.Adam(
             self.policy_model.parameters(), **optimizer_settings["args_"]
         )
+
+        self.logger.info("Initialized newtworks and optimizer.")
+
 
     def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
@@ -207,6 +215,9 @@ class AgentDQN:
         self.target_model.train()
         self.load_training_stats(load_file_paths["train_stats_file"])
         self.replay_buffer.load(load_file_paths["replay_buffer_file"])
+
+        self.logger.info(f"Loaded previous training status from the following files: {str(load_file_paths)}")
+
 
     def load_models(self, models_load_file):
         checkpoint = torch.load(models_load_file)
@@ -634,7 +645,7 @@ class AgentDQN:
         next_q_values = next_q_values.max(1)[0].unsqueeze(1)
         expected_q_value = reward + self.gamma * next_q_values * (1 - terminated)
 
-        if self.loss_function is "mse_loss":
+        if self.loss_function == "mse_loss":
             loss = F.mse_loss(selected_q_value, expected_q_value)
 
         # loss = F.smooth_l1_loss(q_value, expected_q_value)

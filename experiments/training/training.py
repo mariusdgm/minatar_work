@@ -11,6 +11,11 @@ from minatar_dqn.utils import my_logging
 from minatar_dqn import my_dqn
 from experiments.experiment_setup import seed_everything
 
+import multiprocessing
+
+os.environ["OMP_NUM_THREADS"] = "2"
+
+
 def get_config_paths(path_experiments_configs):
     experiment_config_paths = []
     default_config_path = None
@@ -66,6 +71,12 @@ def generate_run_configs(experiment_configs, path_experiments_outputs):
     """
     Generates the combination of configurations for each environment and seed
     specified in the training_configs.
+
+    Args:
+        experiment_configs:
+        path_experiments_outputs:
+    Returns:
+        List that contains the individual experiments to be run.
     """
     runs_configs = []
     for experiment in experiment_configs:
@@ -77,7 +88,7 @@ def generate_run_configs(experiment_configs, path_experiments_outputs):
             single_experiment = {
                 key: value
                 for key, value in experiment.items()
-                if key not in ["environments", "seed"]
+                if key not in ["environments", "seeds"]
             }
             # add base output path
             single_experiment["path_experiments_outputs"] = path_experiments_outputs
@@ -88,24 +99,41 @@ def generate_run_configs(experiment_configs, path_experiments_outputs):
     return runs_configs
 
 
-def create_exp_folder(config, experiments_output_folder, time_stamp=None):
+def create_path_to_experiment_folder(
+    config,
+    experiments_output_folder,
+    timestamp_folder=None,
+    previous_run_timestamp=False,
+):
     """
     Build the path for the nested experiment structure:
     base_outputs / timestamp / experiment / environment / seed
 
     Args:
         config: configuration of the experiment
-        experiments_output_folder:
+        experiments_output_folder: root path for the folder where the outputs
+        of paralelized experiments are stored
+        starting_timestamp: timestamp to be used to create the timestamp level folder
+        previous_run_timestamp: Specifies if the 'experiments_output_folder' timestamp
+        is associated with a previous training run 
+
+    Returns:
+        The path to the folder that stores the output for this singular experiment
+
     """
 
     experiment = config["experiment_name"]
     env = config["environment"]
     seed = config["seed"]
 
-    if time_stamp:
+    if previous_run_timestamp:
         # build path and check that it exists
         exp_folder_path = os.path.join(
-            experiments_output_folder, time_stamp, experiment, env, str(seed)
+            experiments_output_folder,
+            timestamp_folder,
+            experiment,
+            env,
+            str(seed),
         )
         if not os.path.exists(experiments_output_folder):
             raise ValueError(
@@ -115,9 +143,17 @@ def create_exp_folder(config, experiments_output_folder, time_stamp=None):
 
     else:
         # build path and create the folder
-        time_stamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%I_%M_%S_%p")
+        if timestamp_folder is None:
+            timestamp_folder = datetime.datetime.now().strftime(
+                r"%Y_%m_%d-%H_%M_%S"
+            )
+        
         exp_folder_path = os.path.join(
-            experiments_output_folder, time_stamp, experiment, env, str(seed)
+            experiments_output_folder,
+            timestamp_folder,
+            experiment,
+            env,
+            str(seed),
         )
         Path(exp_folder_path).mkdir(parents=True, exist_ok=True)
 
@@ -141,16 +177,28 @@ def get_training_file_names(exp_folder_path, experiment_file_string):
     }
 
 
-def run_training_experiment(config, restart_training_timestamp=None):
+def run_training_experiment(config):
 
     path_experiments_outputs = config["path_experiments_outputs"]
-    exp_folder_path = create_exp_folder(config, path_experiments_outputs)
+    exp_folder_path = create_path_to_experiment_folder(
+        config,
+        path_experiments_outputs,
+        timestamp_folder=config["experiment_start_timestamp"],
+    )
+
+    experiment_file_string = (
+        f'{config["experiment_name"]}_{config["environment"]}_{config["seed"]}'
+    )
 
     logs_folder = os.path.join(exp_folder_path, "logs")
     Path(logs_folder).mkdir(parents=True, exist_ok=True)
 
     env_name = config["environment"]
-    logger = my_logging.setup_logger(env_name=env_name, folder_path=logs_folder)
+    logger = my_logging.setup_logger(
+        env_name=env_name,
+        folder_path=logs_folder,
+        identifier_string=experiment_file_string,
+    )
     logger.info(
         f'Starting up experiment: {config["experiment_name"]}, environment: {config["environment"]}, seed: {config["seed"]}'
     )
@@ -164,18 +212,16 @@ def run_training_experiment(config, restart_training_timestamp=None):
     )
 
     ### Setup output and loading paths ###
-    experiment_file_string = (
-        f'{config["experiment_name"]}_{config["environment"]}_{config["seed"]}'
-    )
 
     output_files_paths = get_training_file_names(
         exp_folder_path, experiment_file_string
     )
 
     load_file_paths = None
-    if restart_training_timestamp:
-        path_previous_experiments_outputs = create_exp_folder(
-            config, path_experiments_outputs, restart_training_timestamp
+    if "restart_training_timestamp" in config:
+        path_previous_experiments_outputs = create_path_to_experiment_folder(
+            config, path_experiments_outputs, config["restart_training_timestamp"],
+            previous_run_timestamp = True
         )
         load_file_paths = get_training_file_names(
             path_previous_experiments_outputs, experiment_file_string
@@ -188,18 +234,45 @@ def run_training_experiment(config, restart_training_timestamp=None):
     with open(config_to_record, "w") as file:
         yaml.dump(config, file)
 
-    # experiment_agent = my_dqn.AgentDQN(
-    #     train_env=train_env,
-    #     validation_env=validation_env,
-    #     output_files_paths=output_files_paths,
-    #     load_file_paths=load_file_paths,
-    #     save_checkpoints=True,
-    #     logger=logger,
-    #     config=config,
-    # )
-    # experiment_agent.train(train_epochs=config["epochs_to_train"])
+    experiment_agent = my_dqn.AgentDQN(
+        train_env=train_env,
+        validation_env=validation_env,
+        output_files_paths=output_files_paths,
+        load_file_paths=load_file_paths,
+        save_checkpoints=True,
+        logger=logger,
+        config=config,
+    )
+    experiment_agent.train(train_epochs=config["epochs_to_train"])
+    # experiment_agent.train(1)
+
+    logger.info(
+        f'Finished training experiment: {config["experiment_name"]}, environment: {config["environment"]}, seed: {config["seed"]}'
+    )
 
     my_logging.cleanup_file_handlers(experiment_logger=logger)
+
+    return True
+
+
+def start_parallel_training_session(
+    configs, restart_training_timestamp=None, processes=8, create_start_timestamp=True
+):
+
+    if create_start_timestamp:
+        for conf in configs:
+            conf["experiment_start_timestamp"] = datetime.datetime.now().strftime(
+                r"%Y_%m_%d-%H_%M_%S"
+            )
+
+    if restart_training_timestamp:
+        for conf in configs:
+            conf["restart_training_timestamp"] = restart_training_timestamp
+
+    with multiprocessing.Pool(processes=processes) as pool:
+        statuses = list(pool.map(run_training_experiment, configs))
+
+    print(f"Parallel job run statuses: {statuses}")
 
 
 def main():
@@ -218,13 +291,11 @@ def main():
 
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
 
-    for i, config in enumerate(runs_configs):
+    # start_parallel_training_session(
+    #     runs_configs, restart_training_timestamp="2023_02_23-21_40_42"
+    # )
 
-        # print(config)
-        # print(i)
-
-        run_training_experiment(config)
-
+    start_parallel_training_session(runs_configs)
 
     my_logging.cleanup_file_handlers()
 

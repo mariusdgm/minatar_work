@@ -4,17 +4,27 @@ import sys
 import logging
 import datetime
 
-def setup_logger(env_name="default_game", folder_path=None):
+def setup_logger(env_name="default_game", folder_path=None, identifier_string=None):
     ### Setup logging for training ####
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+    if identifier_string is None:
+        formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
+    else:
+        formatter = logging.Formatter(
+                f"%(asctime)s - %(name)s - %(levelname)s - {identifier_string} - %(message)s"
+            )
 
-    if not logger.handlers:
-        # create console handler
+    stdout_handler_exists = False
+    for handler in logging.getLogger().handlers:
+        if hasattr(handler, 'stream') and handler.stream == sys.stdout:
+            stdout_handler_exists = True
+
+    # If no handler exists, add one that writes to sys.stdout
+    if not stdout_handler_exists:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         console_handler.setFormatter(formatter)
@@ -22,7 +32,7 @@ def setup_logger(env_name="default_game", folder_path=None):
 
     # create file handler
     if folder_path:
-        time_stamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%I_%M_%S_%p")
+        time_stamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
         log_file_name = f"{env_name}_{time_stamp}"
         log_file_path = os.path.join(folder_path, log_file_name)
         file_handler = logging.FileHandler(log_file_path)
