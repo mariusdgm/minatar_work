@@ -14,6 +14,7 @@ agent_params:
     loss_fcn: mse_loss
 
     gamma: 0.99 
+    
     epsilon:
       start: 1.0
       end: 0.01

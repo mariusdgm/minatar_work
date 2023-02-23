@@ -15,7 +15,7 @@ import argparse
 
 from minatar import Environment
 from minatar_dqn.my_dqn import Conv_QNet
-from minatar_dqn.utils.logging import seed_everything, setup_logger
+from minatar_dqn.utils.my_logging import seed_everything, setup_logger
 
 import multiprocessing
 

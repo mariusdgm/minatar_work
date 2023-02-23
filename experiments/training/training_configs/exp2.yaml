@@ -1,0 +1,8 @@
+environments: [breakout, seaquest, space_invaders, asterix]
+seeds: [0]
+epochs_to_train: 50
+
+estimator:
+  model: Conv_QNET
+  args_:
+    conv_hidden_out_size: 32

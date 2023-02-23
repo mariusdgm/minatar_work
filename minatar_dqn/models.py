@@ -2,7 +2,7 @@ import torch.autograd as autograd
 import torch.nn as nn
 
 class Conv_QNet(nn.Module):
-    def __init__(self, in_features, in_channels, num_actions, conv_hidden_out_size):
+    def __init__(self, in_features, in_channels, num_actions, conv_hidden_out_size=16):
         super().__init__()
 
         self.in_features = in_features

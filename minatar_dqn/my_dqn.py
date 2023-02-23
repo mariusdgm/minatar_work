@@ -13,7 +13,9 @@ import torch.nn.functional as F
 from minatar import Environment
 
 from minatar_dqn.replay_buffer import ReplayBuffer
-from minatar_dqn.utils.logging import seed_everything, setup_logger
+from experiments.experiment_setup import seed_everything
+from minatar_dqn.utils.my_logging import setup_logger
+from minatar_dqn.models import Conv_QNet
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
@@ -41,45 +43,26 @@ class AgentDQN:
         self,
         train_env,
         validation_env,
-        model_file=None,
-        replay_buffer_file=None,
-        train_stats_file=None,
+        output_files_paths=None,
+        load_file_paths=None,
         save_checkpoints=True,
         logger=None,
+        config=None,
     ) -> None:
 
+        # assign environments
         self.train_env = train_env
         self.validation_env = validation_env
 
-        self.model_file = model_file
-        self.replay_buffer_file = replay_buffer_file
-        self.train_stats_file = train_stats_file
+        # assign output files
+        self.model_file = output_files_paths["model_file"]
+        self.replay_buffer_file = output_files_paths["replay_buffer_file"]
+        self.train_stats_file = output_files_paths["train_stats_file"]
+
         self.save_checkpoints = save_checkpoints
         self.logger = logger
 
-        self.train_step_cnt = 200_000
-        self.validation_enabled = True
-        self.validation_step_cnt = 100_000
-        self.validation_epsilon = 0.001
-        self.episode_termination_limit = 10_000
-
-        self.replay_start_size = 5000
-        self.epsilon_by_frame = self._get_linear_decay_function(
-            start=1.0, end=0.01, decay=250_000, eps_decay_start=self.replay_start_size
-        )
-        self.gamma = 0.99  
-
-        self._init_envs() # sets up in_features etc...
-
-        self.replay_buffer = ReplayBuffer(
-            max_size=100_000,
-            state_dim=self.in_features,
-            action_dim=1,
-            n_step=0,
-        )
-        self.batch_size = 32
-        self.training_freq = 4
-        self.target_model_update_freq = 100
+        self._load_config_settings(config)
 
         self._init_models()  # init policy, target and optim
 
@@ -92,17 +75,66 @@ class AgentDQN:
         self.validation_stats = []
 
         # check that all paths were provided and that the files can be found
-        if (
-            self.model_file is not None
-            and os.path.exists(self.model_file)
-            and self.replay_buffer_file is not None
-            and os.path.exists(self.replay_buffer_file)
-            and self.train_stats_file is not None
-            and os.path.exists(self.train_stats_file)
-        ):
-            self.load_training_state(
-                self.model_file, self.replay_buffer_file, self.train_stats_file
-            )
+        if load_file_paths:
+            self._check_load_paths(load_file_paths)
+            self.load_training_state(load_file_paths)
+
+    def _check_load_paths(self, load_file_paths):
+        expected_keys = ["model_file", "replay_buffer_file", "train_stats_file"]
+        for file in expected_keys:
+            if file not in load_file_paths:
+                raise KeyError(f"Key {file} missing from load_file_paths argument.")
+            if not os.path.exists(load_file_paths[file]):
+                raise FileNotFoundError(
+                    f"Could not find the file {load_file_paths[file]} for {file}."
+                )
+
+    def _load_config_settings(self, config={}):
+        """
+        Load the settings from config.
+        If config was not provided, then default values are used.
+        """
+        agent_params = config.get("agent_params", {}).get("args_", {})
+
+        # setup training configuration
+        self.train_step_cnt = agent_params.get("train_step_cnt", 200_000)
+        self.validation_enabled = agent_params.get("validation_enabled", True)
+        self.validation_step_cnt = agent_params.get("validation_step_cnt", 100_000)
+        self.validation_epsilon = agent_params.get("validation_epsilon", 0.001)
+        self.episode_termination_limit = agent_params.get(
+            "episode_termination_limit", 10_000
+        )
+        self.replay_start_size = agent_params.get("replay_start_size", 5_000)
+
+        self.batch_size = agent_params.get("batch_size", 32)
+        self.training_freq = agent_params.get("training_freq", 4)
+        self.target_model_update_freq = agent_params.get(
+            "target_model_update_freq", 100
+        )
+        self.gamma = agent_params.get("gamma", 0.99)
+        self.loss_function = agent_params.get("loss_fcn", "mse_loss")
+
+        eps_settings = agent_params.get(
+            "epsilon", {"start": 1.0, "end": 0.01, "decay": 250_000}
+        )
+        self.epsilon_by_frame = self._get_linear_decay_function(
+            start=eps_settings["start"],
+            end=eps_settings["end"],
+            decay=eps_settings["decay"],
+            eps_decay_start=self.replay_start_size,
+        )
+
+        self._read_and_init_envs()  # sets up in_features etc...
+
+        buffer_settings = config.get(
+            "replay_buffer", {"max_size": 100_000, "action_dim": 1, "n_step": 0}
+        )
+        self.replay_buffer = ReplayBuffer(
+            max_size=buffer_settings.get("max_size", 100_000),
+            state_dim=self.in_features,
+            action_dim=buffer_settings.get("action_dim", 1),
+            n_step=buffer_settings.get("n_step", 0),
+        )
 
     def _get_exp_decay_function(self, start, end, decay):
         return lambda x: end + (start - end) * np.exp(-1.0 * x / decay)
@@ -117,7 +149,7 @@ class AgentDQN:
             eps_decay_start: after how many frames to actually start decaying,
                             uses self.replay_start_size by default
 
-        Returns: 
+        Returns:
             function to compute the epsillon based on current frame counter
         """
         if not eps_decay_start:
@@ -131,25 +163,31 @@ class AgentDQN:
         if path is None:
             raise ValueError("Provide a path")
 
-    def _init_models(self):
-        self.policy_model = Conv_QNet(
-            self.in_features,
-            self.in_channels,
-            self.num_actions,
-            self.width_multiplicator,
-        )
-        self.target_model = Conv_QNet(
-            self.in_features,
-            self.in_channels,
-            self.num_actions,
-            self.width_multiplicator,
+    def _init_models(self, config):
+        estimator_settings = config.get(
+            "estimator", {"model": "Conv_QNet", "args_": {}}
         )
 
+        if estimator_settings["model"] is "Conv_QNet":
+            self.policy_model = Conv_QNet(
+                self.in_features,
+                self.in_channels,
+                self.num_actions,
+                **estimator_settings["args_"],
+            )
+            self.target_model = Conv_QNet(
+                self.in_features,
+                self.in_channels,
+                self.num_actions,
+                **estimator_settings["args_"],
+            )
+
+        optimizer_settings = config.get("optim", {"name": "Adam", "args_": {}})
         self.optimizer = optim.Adam(
-            self.policy_model.parameters(), lr=0.0000625, eps=0.00015
+            self.policy_model.parameters(), **optimizer_settings["args_"]
         )
 
-    def _init_envs(self):
+    def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
         # returns state as [w, h, channels]
         state_shape = self.train_env.state_shape()
@@ -163,15 +201,12 @@ class AgentDQN:
         self.train_env.reset()
         self.validation_env.reset()
 
-
-    def load_training_state(
-        self, models_load_file, replay_buffer_file, training_stats_file
-    ):
-        self.load_models(models_load_file)
+    def load_training_state(self, load_file_paths):
+        self.load_models(load_file_paths["model_file"])
         self.policy_model.train()
         self.target_model.train()
-        self.load_training_stats(training_stats_file)
-        self.replay_buffer.load(replay_buffer_file)
+        self.load_training_stats(load_file_paths["train_stats_file"])
+        self.replay_buffer.load(load_file_paths["replay_buffer_file"])
 
     def load_models(self, models_load_file):
         checkpoint = torch.load(models_load_file)
@@ -599,7 +634,9 @@ class AgentDQN:
         next_q_values = next_q_values.max(1)[0].unsqueeze(1)
         expected_q_value = reward + self.gamma * next_q_values * (1 - terminated)
 
-        loss = F.mse_loss(selected_q_value, expected_q_value)
+        if self.loss_function is "mse_loss":
+            loss = F.mse_loss(selected_q_value, expected_q_value)
+
         # loss = F.smooth_l1_loss(q_value, expected_q_value)
 
         self.optimizer.zero_grad()
@@ -640,7 +677,6 @@ def classic_experiment():
 
     train_logger = setup_logger(args.game, logs_path)
 
-    # print("Cuda available?: " + str(torch.cuda.is_available()))
     my_agent = AgentDQN(
         train_env=train_env,
         validation_env=validation_env,
@@ -656,9 +692,6 @@ def classic_experiment():
     for handler in handlers:
         my_agent.logger.removeHandler(handler)
         handler.close()
-
-
-# date -> game_model_parameter -> folder_seed -> logs, replay buffer, checkpoints, models, config file
 
 
 def build_environment(game_name, random_seed):
@@ -677,7 +710,9 @@ def build_environment(game_name, random_seed):
     return Environment(game_name, random_seed)
 
 
-def start_training_experiment(agent_descriptor, model_descriptor, environment_descriptor):
+def start_training_experiment(
+    agent_descriptor, model_descriptor, environment_descriptor
+):
     """Routine for training a single model on an environment."""
     pass
 
