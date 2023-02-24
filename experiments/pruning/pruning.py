@@ -1,9 +1,13 @@
 import os
 import sys
 
-import time
+proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(proj_root)
+
 import datetime
 import random
+import multiprocessing
+
 
 import torch
 import torch.nn.utils.prune as prune
@@ -15,9 +19,16 @@ import argparse
 
 from minatar import Environment
 from minatar_dqn.my_dqn import Conv_QNET
-from minatar_dqn.utils.my_logging import seed_everything, setup_logger
+from minatar_dqn.utils.my_logging import setup_logger
 
-import multiprocessing
+from experiments.experiment_utils import (
+    seed_everything,
+    search_files_with_string,
+    split_path_at_substring,
+)
+
+
+os.environ["OMP_NUM_THREADS"] = "2"
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
@@ -277,7 +288,7 @@ class PruningExperiment:
 
         return validation_stats
 
-# TODO: change these 
+
 ########## Define pruning functions ##########
 def pruning_method_1(model, pruning_factor):
     """
@@ -285,7 +296,7 @@ def pruning_method_1(model, pruning_factor):
     linear layer in the output layer using unstructured pruning
     with L1 norm.
     """
-    conv_layer = model.features[0]
+    conv_layer = model.features[2]
     prune.l1_unstructured(conv_layer, name="weight", amount=pruning_factor)
 
     lin_layer = model.fc[0]
@@ -297,23 +308,44 @@ def pruning_method_2(model, pruning_factor):
     Prune all feature extractor and the first linear layer
     unstructured pruning with L1 norm.
     """
+    conv_layer1 = model.features[0]
+    prune.l1_unstructured(conv_layer1, name="weight", amount=pruning_factor)
+
+    conv_layer2 = model.features[2]
+    prune.l1_unstructured(conv_layer2, name="weight", amount=pruning_factor)
+
     lin_layer = model.fc[0]
     prune.l1_unstructured(lin_layer, name="weight", amount=pruning_factor)
 
-def pruning_method_3():
+
+def pruning_method_3(model, pruning_factor):
     """
     Prune all layers using
     unstructured pruning with L1 norm.
     """
-    pass
+    conv_layer1 = model.features[0]
+    prune.l1_unstructured(conv_layer1, name="weight", amount=pruning_factor)
+
+    conv_layer2 = model.features[2]
+    prune.l1_unstructured(conv_layer2, name="weight", amount=pruning_factor)
+
+    lin_layer1 = model.fc[0]
+    prune.l1_unstructured(lin_layer1, name="weight", amount=pruning_factor)
+
+    lin_layer2 = model.fc[2]
+    prune.l1_unstructured(lin_layer2, name="weight", amount=pruning_factor)
+
 
 def pruning_method_4(model, pruning_factor):
     """
     Prune all feature extractor using structured pruning
     with the L2 norm along dim 0.
     """
-    conv_layer = model.features[0]
-    prune.ln_structured(conv_layer, name="weight", amount=pruning_factor, n=2, dim=0)
+    conv_layer1 = model.features[0]
+    prune.ln_structured(conv_layer1, name="weight", amount=pruning_factor, n=2, dim=0)
+
+    conv_layer2 = model.features[2]
+    prune.ln_structured(conv_layer2, name="weight", amount=pruning_factor, n=2, dim=0)
 
 
 ### Experiment jobs
@@ -370,6 +402,7 @@ def run_experiment_with_params(params):
 
     return True
 
+
 def run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_name):
     exp_1_params = {
         "game": game,
@@ -395,7 +428,15 @@ def run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_na
         "pruning_function": pruning_method_3,
     }
 
-    experiment_params = [exp_1_params, exp_2_params, exp_3_params]
+    exp_4_params = {
+        "game": game,
+        "exp_out_folder": exp_out_folder,
+        "exp_out_file_name": "pruning_results_4",
+        "params_file_name": params_file_name,
+        "pruning_function": pruning_method_4,
+    }
+
+    experiment_params = [exp_1_params, exp_2_params, exp_3_params, exp_4_params]
 
     # initializer=setup_logger
     with multiprocessing.Pool() as pool:
@@ -403,25 +444,50 @@ def run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_na
 
     logger.info(f"Parallel pruning status: {str(statuses)}")
 
+
 def main():
-    game = "breakout"
+    """
+    Look in the folder with trained model for trained models
+    The output of the pruning experiment mirrors the folder structure of the training experiment
+    There is one additional nesting level for the pruning method
+    """
 
-    # build path to trained model params
-    proj_dir = os.path.abspath(".")
-    default_save_folder = os.path.join(proj_dir, "checkpoints", game)
-    params_file_name = os.path.join(default_save_folder, game + "_model")
-
-    exp_out_folder = os.path.join(default_save_folder, "pruning_exp")
-    Path(exp_out_folder).mkdir(parents=True, exist_ok=True)
-
-    # exp_out_file = os.path.join(exp_out_folder, "baseline")
 
     seed_everything(0)
-    logger = setup_logger(game)
+    logger = setup_logger()
 
-    create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name)
+    # Collect all paths to models in a specified folder
+    training_outputs_folder_path = (
+        r"D:\Work\PhD\minatar_work\experiments\training\outputs"
+    )
+    training_timestamp_folder = "2023_02_24-00_20_13"
 
-    run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_name)
+    model_file_path_list = search_files_with_string(
+        os.path.join(training_outputs_folder_path, training_timestamp_folder), "model"
+    )
+
+    # build and create paths to pruning experiment outputs
+    pruning_outputs_folder_path = (
+        r"D:\Work\PhD\minatar_work\experiments\pruning\outputs"
+    )
+    for model_path in model_file_path_list:
+        if "breakout" in model_path:
+            game = "breakout"
+            # print(model_path)
+
+            left_path, abs_path_experiment_model = split_path_at_substring(
+                model_path, training_timestamp_folder
+            )
+            folder_structure, model_name = os.path.split(abs_path_experiment_model)
+            path_to_pruning_experiment_folder = os.path.join(
+                pruning_outputs_folder_path, training_timestamp_folder, folder_structure
+            )
+            Path(path_to_pruning_experiment_folder).mkdir(parents=True, exist_ok=True)
+            
+            create_baseline_experiment_result(logger, game, path_to_pruning_experiment_folder, model_path)
+
+            run_parallel_pruning_experiment(logger, game, path_to_pruning_experiment_folder, model_path)
+
 
     handlers = logger.handlers[:]
     for handler in handlers:
@@ -431,6 +497,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# setting for torch and numpy  
-# OMP_NUM_THREADS=2 python <script>  

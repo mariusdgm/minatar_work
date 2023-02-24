@@ -9,6 +9,7 @@ import torch
 
 import pandas as pd
 
+
 def load_training_stats(training_stats_file):
     checkpoint = torch.load(training_stats_file)
 
@@ -18,7 +19,7 @@ def load_training_stats(training_stats_file):
     return training_stats, validation_stats
 
 
-def get_df_of_stat(stats, stat_name):
+def get_df_of_stat(stats, stat_name, show_epochs=False, epoch_frames=200_000):
     frame_stamps = []
     stat_records = []
 
@@ -28,9 +29,15 @@ def get_df_of_stat(stats, stat_name):
 
     df = pd.DataFrame.from_records(stat_records, index=frame_stamps)
     df = df.reset_index()
-    df = df.rename(columns={"index": "frames"}) 
+
+    if show_epochs:
+        df = df.rename(columns={"index": "epoch"})
+        df["epoch"] = df["epoch"] / epoch_frames
+    else:
+        df = df.rename(columns={"index": "frames"})
 
     return df
+
 
 def get_df_of_stat_pruning(stats, stat_name):
     x_idx = []
@@ -47,38 +54,42 @@ def get_df_of_stat_pruning(stats, stat_name):
     return df
 
 
-def plot_stat_log(stats, stat_name, title):
-    df = get_df_of_stat(stats, stat_name=stat_name)
+def plot_stat_log(stats, stat_name, title, show_epochs=False):
+    df = get_df_of_stat(stats, stat_name=stat_name, show_epochs=show_epochs)
+
+    x_label = "frames"
+    if show_epochs:
+        x_label = "epoch"
 
     fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True, figsize=(12, 8))
     fig.suptitle(title)
 
-    sns.lineplot(data=df, x="frames", y="mean", ax=axs[0])
+    sns.lineplot(data=df, x=x_label, y="mean", ax=axs[0])
     axs[0].set_ylabel(
         f"{stat_name} mean",
     )
     axs[0].set_xlabel(
-        "Frames",
+        x_label,
     )
 
-    sns.lineplot(data=df, x="frames", y="median", ax=axs[1])
+    sns.lineplot(data=df, x=x_label, y="median", ax=axs[1])
     axs[1].set_ylabel(
         f"{stat_name} median",
     )
     axs[1].set_xlabel(
-        "Frames",
+        x_label,
     )
 
-    sns.lineplot(data=df, x="frames", y="max", ax=axs[2])
+    sns.lineplot(data=df, x=x_label, y="max", ax=axs[2])
     axs[2].set_ylabel(
         f"{stat_name} max",
     )
     axs[2].set_xlabel(
-        "Frames",
+        x_label,
     )
 
 
-def plot_training_info(train_log_file_name):
+def plot_training_info(train_log_file_name, show_epochs=False):
     training_stats, validation_stats = load_training_stats(train_log_file_name)
 
     # plot_stat_log(training_stats, stat_name="episode_rewards", title="Episodic rewards")
@@ -87,10 +98,23 @@ def plot_training_info(train_log_file_name):
     # plot_stat_log(training_stats, stat_name="episode_max_qs", title="Episodic Q vals")
 
     plot_stat_log(
-        validation_stats, stat_name="episode_rewards", title="Episodic rewards"
+        validation_stats,
+        stat_name="episode_rewards",
+        title="Episodic rewards",
+        show_epochs=show_epochs,
     )
-    plot_stat_log(validation_stats, stat_name="episode_frames", title="Episodic length")
-    plot_stat_log(validation_stats, stat_name="episode_max_qs", title="Episodic Q vals")
+    plot_stat_log(
+        validation_stats,
+        stat_name="episode_frames",
+        title="Episodic length",
+        show_epochs=show_epochs,
+    )
+    plot_stat_log(
+        validation_stats,
+        stat_name="episode_max_qs",
+        title="Episodic Q vals",
+        show_epochs=show_epochs,
+    )
 
 
 def load_pruning_experiment_data(pruning_exp_file):
@@ -106,11 +130,11 @@ def load_pruning_experiment_data(pruning_exp_file):
 
 def get_df_of_pruning_stats(stats, stat_name):
     """Transform dict of experimental stats to dataframe.
-    
+
     Args:
         stats: dict with statistics of experiment with the following structure:
-               pruning_value: dict with episodic rewards stats, episodic length stats etc. 
-               The stats are the mean, median, std, min and max of the vector of values 
+               pruning_value: dict with episodic rewards stats, episodic length stats etc.
+               The stats are the mean, median, std, min and max of the vector of values
                that was generated during the experiment.
         stat_name: which statistics to plot (ex: 'episode_rewards', 'episode_rewards')
 
@@ -129,6 +153,7 @@ def get_df_of_pruning_stats(stats, stat_name):
     df = df.rename(columns={"index": "pruning_factor"})
 
     return df
+
 
 def plot_pruning_stat(stats, stat_name, title=None, show=False, plot_min_max=False):
 
@@ -210,7 +235,9 @@ def plot_pruning_stat(stats, stat_name, title=None, show=False, plot_min_max=Fal
     if show:
         plt.show()
 
+
 # TODO: also make function for comparison at same pruning value
+
 
 def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
 
@@ -237,18 +264,21 @@ def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
 
 
 if __name__ == "__main__":
-    
-    experiment_folder = r"D:\Work\PhD\minatar_work\experiments\training\outputs\2023_02_23-23_29_23\exp1\breakout\0"
 
-    train_log_file_name = os.path.join(experiment_folder, "exp1_breakout_0_train_stats")
+    experiment_folder = r"D:\Work\PhD\minatar_work\experiments\training\outputs\2023_02_24-15_43_43\conv_model_16\breakout\0"
 
+    train_log_file_name = os.path.join(
+        experiment_folder, "conv_model_16_breakout_0_train_stats"
+    )
+
+    plot_training_info(train_log_file_name, show_epochs=True)
+
+    # default_save_folder = r"D:\Work\PhD\minatar_work\checkpoints\breakout"
 
     # baseline_file_path = os.path.join(default_save_folder, "pruning_exp", "baseline")
     # pruning_log_file_name = os.path.join(
     #     default_save_folder, "pruning_exp", "pruning_results_1"
     # )
-
-    plot_training_info(train_log_file_name)
 
     # plot_pruning_experiment_data(baseline_file_path, pruning_log_file_name)
 

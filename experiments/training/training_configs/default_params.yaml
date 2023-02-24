@@ -5,7 +5,6 @@ agent_params:
     validation_enabled: True
     validation_step_cnt: 100_000
     validation_epsilon: 0.001
-    episode_termination_limit: 10_000
     replay_start_size: 5_000
     
     batch_size: 32

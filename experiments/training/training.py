@@ -3,15 +3,15 @@ import yaml
 import itertools
 from pathlib import Path
 import datetime
+import multiprocessing
 
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(proj_root)
 
 from minatar_dqn.utils import my_logging
 from minatar_dqn import my_dqn
-from experiments.experiment_setup import seed_everything
+from experiments.experiment_utils import seed_everything
 
-import multiprocessing
 
 os.environ["OMP_NUM_THREADS"] = "2"
 
@@ -290,10 +290,6 @@ def main():
     experiment_configs = read_config_files(default_config_path, experiment_config_paths)
 
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
-
-    # start_parallel_training_session(
-    #     runs_configs, restart_training_timestamp="2023_02_23-21_40_42"
-    # )
 
     start_parallel_training_session(runs_configs)
 

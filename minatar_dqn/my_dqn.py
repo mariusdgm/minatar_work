@@ -13,12 +13,14 @@ import torch.nn.functional as F
 from minatar import Environment
 
 from minatar_dqn.replay_buffer import ReplayBuffer
-from experiments.experiment_setup import seed_everything
+from experiments.experiment_utils import seed_everything
 from minatar_dqn.utils.my_logging import setup_logger
 from minatar_dqn.models import Conv_QNET
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
+
+# TODO: remove episode limit
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
@@ -101,9 +103,7 @@ class AgentDQN:
         self.validation_enabled = agent_params.get("validation_enabled", True)
         self.validation_step_cnt = agent_params.get("validation_step_cnt", 100_000)
         self.validation_epsilon = agent_params.get("validation_epsilon", 0.001)
-        self.episode_termination_limit = agent_params.get(
-            "episode_termination_limit", 10_000
-        )
+     
         self.replay_start_size = agent_params.get("replay_start_size", 5_000)
 
         self.batch_size = agent_params.get("batch_size", 32)
@@ -357,7 +357,7 @@ class AgentDQN:
                 ep_losses,
                 ep_max_qs,
             ) = self.train_episode(
-                epoch_t, self.train_step_cnt, self.episode_termination_limit
+                epoch_t, self.train_step_cnt
             )
 
             epoch_t += ep_frames
@@ -439,7 +439,7 @@ class AgentDQN:
                 current_episode_reward,
                 ep_frames,
                 ep_max_qs,
-            ) = self.validate_episode(valiation_t, self.episode_termination_limit)
+            ) = self.validate_episode(valiation_t)
 
             valiation_t += ep_frames
             episode_rewards.append(current_episode_reward)
@@ -474,7 +474,7 @@ class AgentDQN:
 
         return stats
 
-    def validate_episode(self, valiation_t, episode_termination_limit):
+    def validate_episode(self, valiation_t):
 
         current_episode_reward = 0.0
         ep_frames = 0
@@ -487,7 +487,6 @@ class AgentDQN:
         is_terminated = False
         while (
             (not is_terminated)
-            and ep_frames < episode_termination_limit
             and (valiation_t + ep_frames)
             < self.validation_step_cnt  # can early stop episode if the frame limit was reached
         ):
@@ -519,7 +518,7 @@ class AgentDQN:
             max_qs,
         )
 
-    def train_episode(self, epoch_t, train_frames, episode_termination_limit):
+    def train_episode(self, epoch_t, train_frames):
         current_episode_reward = 0.0
         ep_frames = 0
         policy_trained_times = 0
@@ -532,7 +531,6 @@ class AgentDQN:
         is_terminated = False
         while (
             (not is_terminated)
-            and ep_frames < episode_termination_limit
             and (epoch_t + ep_frames)
             < train_frames  # can early stop episode if the frame limit was reached
         ):
@@ -657,9 +655,7 @@ class AgentDQN:
         return loss.item()
 
 
-# recommended experiment structure:
-
-
+# TODO: fix this because class was changed
 def classic_experiment():
     parser = argparse.ArgumentParser()
     parser.add_argument("--game", "-g", type=str, default="freeway")
@@ -720,12 +716,6 @@ def build_environment(game_name, random_seed):
 
     return Environment(game_name, random_seed)
 
-
-def start_training_experiment(
-    agent_descriptor, model_descriptor, environment_descriptor
-):
-    """Routine for training a single model on an environment."""
-    pass
 
 
 def main():
