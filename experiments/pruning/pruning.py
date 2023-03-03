@@ -23,7 +23,7 @@ from minatar_dqn.utils.my_logging import setup_logger
 
 from experiments.experiment_utils import (
     seed_everything,
-    search_files_with_string,
+    search_files_ending_with_string,
     split_path_at_substring,
 )
 
@@ -81,7 +81,12 @@ class PruningExperiment:
         self.in_channels = self.in_features[0]
         self.num_actions = self.env.num_actions()
 
-        self.model = Conv_QNET(self.in_features, self.in_channels, self.num_actions)
+        # placeholder for reading config logic:
+        if "16" in self.model_params_file_name:
+            self.model = Conv_QNET(self.in_features, self.in_channels, self.num_actions, conv_hidden_out_size=16)
+        else:
+            self.model = Conv_QNET(self.in_features, self.in_channels, self.num_actions, conv_hidden_out_size=32)
+        
 
         self.load_model_params()
 
@@ -460,9 +465,9 @@ def main():
     training_outputs_folder_path = (
         r"D:\Work\PhD\minatar_work\experiments\training\outputs"
     )
-    training_timestamp_folder = "2023_02_24-00_20_13"
+    training_timestamp_folder = "2023_03_02-13_31_43"
 
-    model_file_path_list = search_files_with_string(
+    model_file_path_list = search_files_ending_with_string(
         os.path.join(training_outputs_folder_path, training_timestamp_folder), "model"
     )
 
@@ -470,9 +475,12 @@ def main():
     pruning_outputs_folder_path = (
         r"D:\Work\PhD\minatar_work\experiments\pruning\outputs"
     )
+
     for model_path in model_file_path_list:
-        if "breakout" in model_path:
-            game = "breakout"
+        # # if "breakout" in model_path:
+        if not "one_layer" in model_path:
+
+            # game = "breakout"
             # print(model_path)
 
             left_path, abs_path_experiment_model = split_path_at_substring(
@@ -484,6 +492,10 @@ def main():
             )
             Path(path_to_pruning_experiment_folder).mkdir(parents=True, exist_ok=True)
             
+            game = model_name.split("_")[-3]
+            if game == "invaders":
+                game = "space_invaders"
+
             create_baseline_experiment_result(logger, game, path_to_pruning_experiment_folder, model_path)
 
             run_parallel_pruning_experiment(logger, game, path_to_pruning_experiment_folder, model_path)

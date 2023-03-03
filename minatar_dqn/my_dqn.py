@@ -15,12 +15,10 @@ from minatar import Environment
 from minatar_dqn.replay_buffer import ReplayBuffer
 from experiments.experiment_utils import seed_everything
 from minatar_dqn.utils.my_logging import setup_logger
-from minatar_dqn.models import Conv_QNET
+from minatar_dqn.models import Conv_QNET, Conv_QNET_one
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
-
-# TODO: remove episode limit
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
@@ -73,6 +71,8 @@ class AgentDQN:
         self.episodes = 0  # episode nr
         self.policy_model_update_counter = 0
 
+        self.reset_training_episode_tracker()
+
         self.training_stats = []
         self.validation_stats = []
 
@@ -103,7 +103,7 @@ class AgentDQN:
         self.validation_enabled = agent_params.get("validation_enabled", True)
         self.validation_step_cnt = agent_params.get("validation_step_cnt", 100_000)
         self.validation_epsilon = agent_params.get("validation_epsilon", 0.001)
-     
+
         self.replay_start_size = agent_params.get("replay_start_size", 5_000)
 
         self.batch_size = agent_params.get("batch_size", 32)
@@ -183,6 +183,19 @@ class AgentDQN:
                 self.num_actions,
                 **estimator_settings["args_"],
             )
+        elif estimator_settings["model"] == "Conv_QNET_one":
+            self.policy_model = Conv_QNET_one(
+                self.in_features,
+                self.in_channels,
+                self.num_actions,
+                **estimator_settings["args_"],
+            )
+            self.target_model = Conv_QNET_one(
+                self.in_features,
+                self.in_channels,
+                self.num_actions,
+                **estimator_settings["args_"],
+            )
         else:
             estiamtor_name = estimator_settings["model"]
             raise ValueError(f"Could not setup estimator. Tried with: {estiamtor_name}")
@@ -193,7 +206,6 @@ class AgentDQN:
         )
 
         self.logger.info("Initialized newtworks and optimizer.")
-
 
     def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
@@ -216,8 +228,9 @@ class AgentDQN:
         self.load_training_stats(load_file_paths["train_stats_file"])
         self.replay_buffer.load(load_file_paths["replay_buffer_file"])
 
-        self.logger.info(f"Loaded previous training status from the following files: {str(load_file_paths)}")
-
+        self.logger.info(
+            f"Loaded previous training status from the following files: {str(load_file_paths)}"
+        )
 
     def load_models(self, models_load_file):
         checkpoint = torch.load(models_load_file)
@@ -337,46 +350,56 @@ class AgentDQN:
             f"Ended training session after {train_epochs} epochs at t = {self.t}"
         )
 
+    
     def train_epoch(self):
         self.logger.info(f"Starting training epoch at t = {self.t}")
         epoch_t = 0
-        episode_rewards = []
-        episode_nr_frames = []
         policy_trained_times = 0
         target_trained_times = 0
-        ep_losses = []
-        ep_max_qs = []
+
+        epoch_episode_rewards = []
+        epoch_episode_nr_frames = []
+        epoch_losses = []
+        epoch_max_qs = []
 
         start_time = datetime.datetime.now()
         while epoch_t < self.train_step_cnt:
-            (
+            (   
+                is_terminated,
+                epoch_t,
                 current_episode_reward,
                 ep_frames,
                 ep_policy_trained_times,
                 ep_target_trained_times,
                 ep_losses,
                 ep_max_qs,
-            ) = self.train_episode(
-                epoch_t, self.train_step_cnt
-            )
+            ) = self.train_episode(epoch_t, self.train_step_cnt)
 
-            epoch_t += ep_frames
-            episode_rewards.append(current_episode_reward)
-            episode_nr_frames.append(ep_frames)
-            self.episodes += 1
             policy_trained_times += ep_policy_trained_times
             target_trained_times += ep_target_trained_times
+
+            if is_terminated:
+                # we only want to append these stats if the episode was completed,
+                # otherwise it means it was stopped due to the nr of frames criterion
+                epoch_episode_rewards.append(current_episode_reward)
+                epoch_episode_nr_frames.append(ep_frames)
+                epoch_losses.extend(ep_losses)
+                epoch_max_qs.extend(ep_max_qs)
+
+                self.episodes += 1
+
+                self.reset_training_episode_tracker()
 
         end_time = datetime.datetime.now()
         epoch_time = end_time - start_time
 
         epoch_stats = self.compute_training_epoch_stats(
-            episode_rewards,
-            episode_nr_frames,
+            epoch_episode_rewards,
+            epoch_episode_nr_frames,
             policy_trained_times,
             target_trained_times,
-            ep_losses,
-            ep_max_qs,
+            epoch_losses,
+            epoch_max_qs,
             epoch_time,
         )
         return epoch_stats
@@ -428,30 +451,33 @@ class AgentDQN:
     def validate_epoch(self):
         self.logger.info(f"Starting validation epoch at t = {self.t}")
 
-        episode_rewards = []
-        episode_nr_frames = []
+        epoch_episode_rewards = []
+        epoch_episode_nr_frames = []
+        epoch_max_qs = []
         valiation_t = 0
 
         start_time = datetime.datetime.now()
+
         while valiation_t < self.validation_step_cnt:
             (
-                valiation_t,
                 current_episode_reward,
                 ep_frames,
                 ep_max_qs,
-            ) = self.validate_episode(valiation_t)
-
+            ) = self.validate_episode()
+        
             valiation_t += ep_frames
-            episode_rewards.append(current_episode_reward)
-            episode_nr_frames.append(ep_frames)
+            
+            epoch_episode_rewards.append(current_episode_reward)
+            epoch_episode_nr_frames.append(ep_frames)
+            epoch_max_qs.extend(ep_max_qs)
 
         end_time = datetime.datetime.now()
         epoch_time = end_time - start_time
 
         epoch_stats = self.compute_validation_epoch_stats(
-            episode_rewards,
-            episode_nr_frames,
-            ep_max_qs,
+            epoch_episode_rewards,
+            epoch_episode_nr_frames,
+            epoch_max_qs,
             epoch_time,
         )
         return epoch_stats
@@ -474,7 +500,7 @@ class AgentDQN:
 
         return stats
 
-    def validate_episode(self, valiation_t):
+    def validate_episode(self):
 
         current_episode_reward = 0.0
         ep_frames = 0
@@ -485,55 +511,48 @@ class AgentDQN:
         s = get_state(self.validation_env.state())
 
         is_terminated = False
-        while (
-            (not is_terminated)
-            and (valiation_t + ep_frames)
-            < self.validation_step_cnt  # can early stop episode if the frame limit was reached
-        ):
-
+        while not is_terminated:  
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
             reward, is_terminated = self.validation_env.act(action)
-            reward = torch.tensor([[reward]], device=device).float()
-            is_terminated = torch.tensor([[is_terminated]], device=device)
             s_prime = get_state(self.validation_env.state())
 
             max_qs.append(max_q)
 
-            current_episode_reward += reward.item()
+            current_episode_reward += reward
 
             ep_frames += 1
 
             # Continue the process
             s = s_prime
 
-        # end of episode, return episode statistics:
-        new_valiation_t = valiation_t + ep_frames
-
+        
         return (
-            new_valiation_t,
             current_episode_reward,
             ep_frames,
             max_qs,
         )
 
+    def reset_training_episode_tracker(self):
+        self.current_episode_reward = 0.0
+        self.ep_frames = 0
+        
+        self.losses = []
+        self.max_qs = []
+
+        self.train_env.reset()
+
     def train_episode(self, epoch_t, train_frames):
-        current_episode_reward = 0.0
-        ep_frames = 0
         policy_trained_times = 0
         target_trained_times = 0
-        losses = []
-        max_qs = []
 
         s = get_state(self.train_env.state())
 
         is_terminated = False
-        while (
-            (not is_terminated)
-            and (epoch_t + ep_frames)
-            < train_frames  # can early stop episode if the frame limit was reached
-        ):
+        while (not is_terminated) and (
+            epoch_t  < train_frames
+        ):  # can early stop episode if the frame limit was reached
 
             action, max_q = self.select_action(s, self.t, self.num_actions)
             reward, is_terminated = self.train_env.act(action)
@@ -543,7 +562,7 @@ class AgentDQN:
 
             self.replay_buffer.append(s, action, reward, s_prime, is_terminated)
 
-            max_qs.append(max_q)
+            self.max_qs.append(max_q)
 
             # Start learning when there's enough data and when we can sample a batch of size BATCH_SIZE
             if (
@@ -556,7 +575,7 @@ class AgentDQN:
                     self.policy_model_update_counter += 1
                     loss_val = self.model_learn(sample)
 
-                    losses.append(loss_val)
+                    self.losses.append(loss_val)
                     policy_trained_times += 1
 
                 # Update the target network only after some number of policy network updates
@@ -568,27 +587,25 @@ class AgentDQN:
                     self.target_model.load_state_dict(self.policy_model.state_dict())
                     target_trained_times += 1
 
-            current_episode_reward += reward.item()
+            self.current_episode_reward += reward.item()
 
             self.t += 1
-            ep_frames += 1
+            epoch_t += 1
+            self.ep_frames += 1
 
             # Continue the process
             s = s_prime
 
-        if is_terminated:
-            # reset env to prepare it for next iteration,
-            # if env is not done then keep the current state for next training epoch
-            self.train_env.reset()
-
         # end of episode, return episode statistics:
         return (
-            current_episode_reward,
-            ep_frames,
+            is_terminated,
+            epoch_t,
+            self.current_episode_reward,
+            self.ep_frames,
             policy_trained_times,
             target_trained_times,
-            losses,
-            max_qs,
+            self.losses,
+            self.max_qs,
         )
 
     def display_training_epoch_info(self, stats):
@@ -715,7 +732,6 @@ def build_environment(game_name, random_seed):
     """
 
     return Environment(game_name, random_seed)
-
 
 
 def main():

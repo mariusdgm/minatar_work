@@ -1,7 +1,12 @@
-import os
+import os, sys
+
+proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(proj_root)
 
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+from experiments.experiment_utils import search_files_ending_with_string
 
 sns.set()
 
@@ -19,7 +24,7 @@ def load_training_stats(training_stats_file):
     return training_stats, validation_stats
 
 
-def get_df_of_stat(stats, stat_name, show_epochs=False, epoch_frames=200_000):
+def get_df_of_stat(stats, stat_name, show_epochs=False, epoch_frames=200_000, experiment=None):
     frame_stamps = []
     stat_records = []
 
@@ -35,6 +40,9 @@ def get_df_of_stat(stats, stat_name, show_epochs=False, epoch_frames=200_000):
         df["epoch"] = df["epoch"] / epoch_frames
     else:
         df = df.rename(columns={"index": "frames"})
+
+    if experiment:
+        df["experiment"] = experiment
 
     return df
 
@@ -89,32 +97,106 @@ def plot_stat_log(stats, stat_name, title, show_epochs=False):
     )
 
 
+def plot_stat_log_multi(df, stat_name, title, show_epochs=False):
+
+    x_label = "frames"
+    if show_epochs:
+        x_label = "epoch"
+
+    fig, axs = plt.subplots(nrows=2, ncols=1, sharex=True, figsize=(12, 8))
+    fig.suptitle(title)
+
+    experiments = df["experiment"].unique()
+    colors = sns.color_palette(n_colors=len(experiments))
+
+    for i, exp in enumerate(experiments):
+        exp_df = df[df["experiment"] == exp]
+        sns.lineplot(
+            data=exp_df, x=x_label, y="mean", ax=axs[0], color=colors[i], label=exp
+        )
+        sns.lineplot(
+            data=exp_df, x=x_label, y="median", ax=axs[1], color=colors[i], label=exp
+        )
+        # sns.lineplot(
+        #     data=exp_df, x=x_label, y="max", ax=axs[2], color=colors[i], label=exp
+        # )
+
+    axs[0].set_ylabel(
+        f"{stat_name} mean",
+    )
+    axs[0].set_xlabel(
+        x_label,
+    )
+
+    axs[1].set_ylabel(
+        f"{stat_name} median",
+    )
+    axs[1].set_xlabel(
+        x_label,
+    )
+
+    # axs[2].set_ylabel(
+    #     f"{stat_name} max",
+    # )
+    # axs[2].set_xlabel(
+    #     x_label,
+    # )
+
+    plt.legend()
+
+def subplots_stats(train_log_file_name, stat_name, show_epochs):
+    df = None
+    for log_name in train_log_file_name:
+        training_stats, validation_stats = load_training_stats(log_name)
+        exp_file_name = os.path.basename(log_name)
+        # exp_name = exp_file_name
+        df_stats = get_df_of_stat(
+            validation_stats, stat_name=stat_name, show_epochs=show_epochs, experiment=exp_file_name
+        )
+        if df is None:
+            df = df_stats
+        else:
+            df = pd.concat([df, df_stats], ignore_index=True)
+
+    plot_stat_log_multi(
+        df,
+        stat_name=stat_name,
+        title=stat_name,
+        show_epochs=show_epochs,
+    )
+
 def plot_training_info(train_log_file_name, show_epochs=False):
-    training_stats, validation_stats = load_training_stats(train_log_file_name)
+    if type(train_log_file_name) is list:
+        subplots_stats(train_log_file_name, "episode_rewards", show_epochs)
+        subplots_stats(train_log_file_name, "episode_frames", show_epochs)
 
-    # plot_stat_log(training_stats, stat_name="episode_rewards", title="Episodic rewards")
-    # plot_stat_log(training_stats, stat_name="episode_frames", title="Episodic length")
-    # plot_stat_log(training_stats, stat_name="episode_losses", title="Training loss")
-    # plot_stat_log(training_stats, stat_name="episode_max_qs", title="Episodic Q vals")
 
-    plot_stat_log(
-        validation_stats,
-        stat_name="episode_rewards",
-        title="Episodic rewards",
-        show_epochs=show_epochs,
-    )
-    plot_stat_log(
-        validation_stats,
-        stat_name="episode_frames",
-        title="Episodic length",
-        show_epochs=show_epochs,
-    )
-    plot_stat_log(
-        validation_stats,
-        stat_name="episode_max_qs",
-        title="Episodic Q vals",
-        show_epochs=show_epochs,
-    )
+    else:
+        training_stats, validation_stats = load_training_stats(train_log_file_name)
+
+        # plot_stat_log(training_stats, stat_name="episode_rewards", title="Episodic rewards")
+        # plot_stat_log(training_stats, stat_name="episode_frames", title="Episodic length")
+        # plot_stat_log(training_stats, stat_name="episode_losses", title="Training loss")
+        # plot_stat_log(training_stats, stat_name="episode_max_qs", title="Episodic Q vals")
+
+        plot_stat_log(
+            validation_stats,
+            stat_name="episode_rewards",
+            title="Episodic rewards",
+            show_epochs=show_epochs,
+        )
+        plot_stat_log(
+            validation_stats,
+            stat_name="episode_frames",
+            title="Episodic length",
+            show_epochs=show_epochs,
+        )
+        plot_stat_log(
+            validation_stats,
+            stat_name="episode_max_qs",
+            title="Episodic Q vals",
+            show_epochs=show_epochs,
+        )
 
 
 def load_pruning_experiment_data(pruning_exp_file):
@@ -258,28 +340,69 @@ def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
 
     plot_pruning_stat(pruning_stats, "episode_rewards", "Episodic rewards")
     plot_pruning_stat(pruning_stats, "episode_frames", "Episodic length")
-    plot_pruning_stat(pruning_stats, "episode_max_qs", "Episodic max q val")
+    # plot_pruning_stat(pruning_stats, "episode_max_qs", "Episodic max q val")
 
     plt.show()
 
 
 if __name__ == "__main__":
 
-    experiment_folder = r"D:\Work\PhD\minatar_work\experiments\training\outputs\2023_02_24-15_43_43\conv_model_16\breakout\0"
+    # base_path = r"D:\Work\PhD\minatar_work\experiments\training\outputs"
+    # timestamp_str = "2023_03_02-13_31_43"
+    # # model_str = "conv_model_one_16_layer"
+    # # model_str = "conv_model_16_lower_lr"
+    # model_str = "conv_model_16"
+    # # model_str = "conv_model_32"
 
-    train_log_file_name = os.path.join(
-        experiment_folder, "conv_model_16_breakout_0_train_stats"
-    )
+    # log_file = f"{model_str}_breakout_0_train_stats"
 
-    plot_training_info(train_log_file_name, show_epochs=True)
-
-    # default_save_folder = r"D:\Work\PhD\minatar_work\checkpoints\breakout"
-
-    # baseline_file_path = os.path.join(default_save_folder, "pruning_exp", "baseline")
-    # pruning_log_file_name = os.path.join(
-    #     default_save_folder, "pruning_exp", "pruning_results_1"
+    # experiment_folder = os.path.join(
+    #     base_path, timestamp_str, model_str, "breakout", "0"
     # )
 
-    # plot_pruning_experiment_data(baseline_file_path, pruning_log_file_name)
+    # train_log_file_name = os.path.join(experiment_folder, log_file)
+
+    # # experiment_folder = r"D:\Work\PhD\minatar_work\experiments\training\outputs\2023_02_26-20_53_24\conv_model_16\breakout\0"
+
+    # # train_log_file_name = os.path.join(
+    # #     experiment_folder, "conv_model_16_breakout_0_train_stats"
+    # # )
+
+    # # experiment_folder = r"D:\Work\PhD\minatar_work\experiments\training\outputs\2023_02_26-20_53_24\conv_model_32\breakout\0"
+
+    # # train_log_file_name = os.path.join(
+    # #     experiment_folder, "conv_model_32_breakout_0_train_stats"
+    # # )
+
+    # plot_training_info(train_log_file_name, show_epochs=True)
+
+    # # default_save_folder = r"D:\Work\PhD\minatar_work\checkpoints\breakout"
+
+    # # baseline_file_path = os.path.join(default_save_folder, "pruning_exp", "baseline")
+    # # pruning_log_file_name = os.path.join(
+    # #     default_save_folder, "pruning_exp", "pruning_results_1"
+    # # )
+
+    # # plot_pruning_experiment_data(baseline_file_path, pruning_log_file_name)
+
+    # ##### Plot multiple experiments
+
+    # build list with paths to stats files
+
+    training_outputs_folder_path = (
+        r"D:\Work\PhD\minatar_work\experiments\training\outputs"
+    )
+    training_timestamp_folder = "2023_03_02-13_31_43"
+
+    model_file_path_list = search_files_ending_with_string(
+        os.path.join(training_outputs_folder_path, training_timestamp_folder), "stats"
+    )
+
+    game = "space_invaders"
+
+    model_file_path_list = [file for file in model_file_path_list if game in file]
+    # print(model_file_path_list)
+
+    plot_training_info(model_file_path_list, show_epochs=True)
 
     plt.show()

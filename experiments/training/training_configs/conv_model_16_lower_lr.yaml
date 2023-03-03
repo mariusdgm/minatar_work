@@ -1,0 +1,5 @@
+optim:
+  name: Adam
+  args_:
+    lr: 0.00003125
+    eps: 0.00015

@@ -19,11 +19,11 @@ def seed_everything(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-def search_files_with_string(rootdir, search_string):
+def search_files_ending_with_string(rootdir, search_string):
     filepaths = []
     for subdir, dirs, files in os.walk(rootdir):
         for file in files:
-            if search_string in file:
+            if file.endswith(search_string):
                 filepath = os.path.join(subdir, file)
                 filepaths.append(filepath)
     return filepaths

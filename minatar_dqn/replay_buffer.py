@@ -24,7 +24,7 @@ class ReplayBuffer:
         samples = random.sample(self.buffer, batch_size)
 
         # TODO: try with:
-        states, actions, rewards, next_states, dones = zip(*samples)
+        # states, actions, rewards, next_states, dones = zip(*samples)
         # np.concat?, we want to avoid allocating zeroes and copying
 
         # TODO: benchmark the 2 variants of sampling (timeit)
