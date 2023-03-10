@@ -392,13 +392,18 @@ if __name__ == "__main__":
     training_outputs_folder_path = (
         r"D:\Work\PhD\minatar_work\experiments\training\outputs"
     )
-    training_timestamp_folder = "2023_03_02-13_31_43"
+    training_timestamp_folder = "2023_03_10-09_42_31"
 
     model_file_path_list = search_files_ending_with_string(
         os.path.join(training_outputs_folder_path, training_timestamp_folder), "stats"
     )
 
-    game = "space_invaders"
+    # game = "space_invaders"
+    # game = "breakout"
+    # game = "seaquest"
+    game = "asterix"
+
+
 
     model_file_path_list = [file for file in model_file_path_list if game in file]
     # print(model_file_path_list)

@@ -322,7 +322,6 @@ class AgentDQN:
     def train(self, train_epochs):
         self.logger.info(f"Starting/resuming training session at: {self.t}")
 
-        # Train for a number of episodes
         for epoch in range(train_epochs):
             start_time = datetime.datetime.now()
 
@@ -350,7 +349,6 @@ class AgentDQN:
             f"Ended training session after {train_epochs} epochs at t = {self.t}"
         )
 
-    
     def train_epoch(self):
         self.logger.info(f"Starting training epoch at t = {self.t}")
         epoch_t = 0
@@ -364,7 +362,7 @@ class AgentDQN:
 
         start_time = datetime.datetime.now()
         while epoch_t < self.train_step_cnt:
-            (   
+            (
                 is_terminated,
                 epoch_t,
                 current_episode_reward,
@@ -387,7 +385,6 @@ class AgentDQN:
                 epoch_max_qs.extend(ep_max_qs)
 
                 self.episodes += 1
-
                 self.reset_training_episode_tracker()
 
         end_time = datetime.datetime.now()
@@ -464,9 +461,9 @@ class AgentDQN:
                 ep_frames,
                 ep_max_qs,
             ) = self.validate_episode()
-        
+
             valiation_t += ep_frames
-            
+
             epoch_episode_rewards.append(current_episode_reward)
             epoch_episode_nr_frames.append(ep_frames)
             epoch_max_qs.extend(ep_max_qs)
@@ -511,7 +508,7 @@ class AgentDQN:
         s = get_state(self.validation_env.state())
 
         is_terminated = False
-        while not is_terminated:  
+        while not is_terminated:
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
@@ -527,7 +524,6 @@ class AgentDQN:
             # Continue the process
             s = s_prime
 
-        
         return (
             current_episode_reward,
             ep_frames,
@@ -537,7 +533,6 @@ class AgentDQN:
     def reset_training_episode_tracker(self):
         self.current_episode_reward = 0.0
         self.ep_frames = 0
-        
         self.losses = []
         self.max_qs = []
 
@@ -551,7 +546,7 @@ class AgentDQN:
 
         is_terminated = False
         while (not is_terminated) and (
-            epoch_t  < train_frames
+            epoch_t < train_frames
         ):  # can early stop episode if the frame limit was reached
 
             action, max_q = self.select_action(s, self.t, self.num_actions)
@@ -572,10 +567,10 @@ class AgentDQN:
                 # Train every training_freq number of frames
                 if self.t % self.training_freq == 0:
                     sample = self.replay_buffer.sample(self.batch_size)
-                    self.policy_model_update_counter += 1
                     loss_val = self.model_learn(sample)
 
                     self.losses.append(loss_val)
+                    self.policy_model_update_counter += 1
                     policy_trained_times += 1
 
                 # Update the target network only after some number of policy network updates

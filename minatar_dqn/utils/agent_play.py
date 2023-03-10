@@ -1,5 +1,8 @@
-import os
+import os, sys
 import time
+
+proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(proj_root)
 
 from minatar import Environment
 from minatar.gui import GUI
@@ -8,6 +11,8 @@ import tkinter as Tk
 import torch
 import numpy as np
 import random
+
+import yaml
 
 from minatar_dqn.my_dqn import get_state, Conv_QNET
 
@@ -27,13 +32,12 @@ def get_action_in_state(model, state, num_actions, rand_chance=0.001):
 
 
 ### Watch the agent in play
-def play_game_visual(game):
+def play_game_visual(model_path, config_path):
 
-    env = Environment(game)
+    with open(config_path, "r") as f:
+        config_contents = yaml.safe_load(f)
 
-    proj_dir = os.path.dirname(os.path.abspath(__file__))
-    default_save_folder = os.path.join(proj_dir, "checkpoints", game)
-    file_name = os.path.join(default_save_folder, game + "_model")
+    env = Environment(config_contents["environment"])
 
     state_shape = env.state_shape()
 
@@ -41,8 +45,8 @@ def play_game_visual(game):
     in_channels = in_features[0]
     num_actions = env.num_actions()
 
-    model = Conv_QNET(in_features, in_channels, num_actions)
-    checkpoint = torch.load(file_name)
+    model = Conv_QNET(in_features, in_channels, num_actions, conv_hidden_out_size=config_contents["estimator"]["args_"]["conv_hidden_out_size"])
+    checkpoint = torch.load(model_path)
     model.load_state_dict(checkpoint["policy_model_state_dict"])
 
     gui = GUI(env.game_name(), env.n_channels)
@@ -83,4 +87,12 @@ def play_game_visual(game):
 
 
 if __name__ == "__main__":
-    play_game_visual("freeway")
+
+    eperiment_path = r"D:\Work\PhD\minatar_work\experiments\training\outputs\2023_03_02-13_31_43\conv_model_32\breakout\0"
+    model_file = r"conv_model_32_breakout_0_model"
+    config_file = r"conv_model_32_breakout_0_config"
+
+    model_path = os.path.join(eperiment_path, model_file)
+    config_path = os.path.join(eperiment_path, config_file)
+
+    play_game_visual(model_path, config_path)

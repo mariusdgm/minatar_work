@@ -1,4 +1,3 @@
-environments: [breakout]
 estimator:
   model: Conv_QNET
   args_:
