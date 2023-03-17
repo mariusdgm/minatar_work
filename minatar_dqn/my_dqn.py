@@ -10,12 +10,13 @@ import argparse
 import torch.optim as optim
 import torch.nn.functional as F
 
-from minatar import Environment
+import gym 
 
 from minatar_dqn.replay_buffer import ReplayBuffer
 from experiments.experiment_utils import seed_everything
 from minatar_dqn.utils.my_logging import setup_logger
 from minatar_dqn.models import Conv_QNET, Conv_QNET_one
+from minatar_dqn.minatar_gym_wrappers import PermuteMinatarObsSpace
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
@@ -210,16 +211,16 @@ class AgentDQN:
     def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
         # returns state as [w, h, channels]
-        state_shape = self.train_env.state_shape()
+        state_shape = self.train_env.observation_space.shape
 
         # permute to get batch, channel, w, h shape
         # specific to minatar
         self.in_features = (state_shape[2], state_shape[0], state_shape[1])
         self.in_channels = self.in_features[0]
-        self.num_actions = self.train_env.num_actions()
+        self.num_actions = self.train_env.action_space.n
 
-        self.train_env.reset()
-        self.validation_env.reset()
+        self.train_s, info = self.train_env.reset()
+        self.env_s, info = self.validation_env.reset()
 
     def load_training_state(self, load_file_paths):
         self.load_models(load_file_paths["model_file"])
@@ -294,6 +295,7 @@ class AgentDQN:
         if np.random.binomial(1, epsilon) == 1:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
         else:
+            state = torch.tensor(state, device=device).unsqueeze(0).float()
             action, max_q = self.get_max_q_and_action(state)
 
         return action, max_q
@@ -318,6 +320,7 @@ class AgentDQN:
             q_val = maxq_and_action[0].item()
             action = maxq_and_action[1].view(1, 1)
             return action, q_val
+
 
     def train(self, train_epochs):
         self.logger.info(f"Starting/resuming training session at: {self.t}")
@@ -504,16 +507,14 @@ class AgentDQN:
         max_qs = []
 
         # Initialize the environment and start state
-        self.validation_env.reset()
-        s = get_state(self.validation_env.state())
+        s, info = self.validation_env.reset()
 
         is_terminated = False
         while not is_terminated:
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
-            reward, is_terminated = self.validation_env.act(action)
-            s_prime = get_state(self.validation_env.state())
+            s_prime, reward, is_terminated, truncated, info = self.validation_env.step(action)
 
             max_qs.append(max_q)
 
@@ -536,26 +537,24 @@ class AgentDQN:
         self.losses = []
         self.max_qs = []
 
-        self.train_env.reset()
+        self.train_s, info = self.train_env.reset()
 
     def train_episode(self, epoch_t, train_frames):
         policy_trained_times = 0
         target_trained_times = 0
-
-        s = get_state(self.train_env.state())
 
         is_terminated = False
         while (not is_terminated) and (
             epoch_t < train_frames
         ):  # can early stop episode if the frame limit was reached
 
-            action, max_q = self.select_action(s, self.t, self.num_actions)
-            reward, is_terminated = self.train_env.act(action)
-            reward = torch.tensor([[reward]], device=device).float()
-            is_terminated = torch.tensor([[is_terminated]], device=device)
-            s_prime = get_state(self.train_env.state())
+            action, max_q = self.select_action(self.train_s, self.t, self.num_actions)
+            s_prime, reward, is_terminated, truncated, info = self.train_env.step(action)
 
-            self.replay_buffer.append(s, action, reward, s_prime, is_terminated)
+            # reward = torch.tensor([[reward]], device=device).float()
+            # is_terminated = torch.tensor([[is_terminated]], device=device)
+
+            self.replay_buffer.append(self.train_s, action, reward, s_prime, is_terminated)
 
             self.max_qs.append(max_q)
 
@@ -582,14 +581,14 @@ class AgentDQN:
                     self.target_model.load_state_dict(self.policy_model.state_dict())
                     target_trained_times += 1
 
-            self.current_episode_reward += reward.item()
+            self.current_episode_reward += reward
 
             self.t += 1
             epoch_t += 1
             self.ep_frames += 1
 
             # Continue the process
-            s = s_prime
+            self.train_s  = s_prime
 
         # end of episode, return episode statistics:
         return (
@@ -725,8 +724,22 @@ def build_environment(game_name, random_seed):
 
     For more information check MinAtar documentation
     """
-
-    return Environment(game_name, random_seed)
+    if game_name == "breakout":
+        game_name = "Breakout-v0"
+    elif game_name == "space_invaders":
+        game_name = "SpaceInvaders-v0"
+    elif game_name == "seaquest":
+        game_name = "Seaquest-v0"
+    elif game_name == "asterix":
+        game_name = "Asterix-v0"
+    else:
+        raise ValueError(
+            f"The following env name was provided: {game_name}, please choose between breakout, space_invaders, seaquest and asterix"
+        )
+    env = gym.make(f"MinAtar/{game_name}")
+    env.seed(random_seed)
+    env = PermuteMinatarObsSpace(env)
+    return env
 
 
 def main():

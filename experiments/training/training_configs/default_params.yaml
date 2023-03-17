@@ -1,4 +1,4 @@
-epochs_to_train: 20
+epochs_to_train: 30
 seeds: [0]
 # environments: [breakout]
 environments: [breakout, seaquest, space_invaders, asterix]
@@ -8,7 +8,7 @@ agent_params:
   args_:
     train_step_cnt: 200_000
     validation_enabled: True
-    validation_step_cnt: 100_000
+    validation_step_cnt: 125_000
     validation_epsilon: 0.001
     replay_start_size: 5_000
     
