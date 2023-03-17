@@ -1,6 +1,8 @@
 import os
 import sys
 
+import yaml
+
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(proj_root)
 
@@ -17,9 +19,9 @@ import numpy as np
 from pathlib import Path
 import argparse
 
-from minatar import Environment
-from minatar_dqn.my_dqn import Conv_QNET
-from minatar_dqn.utils.my_logging import setup_logger
+from minatar_dqn.my_dqn import Conv_QNET, Conv_QNET_one, AgentDQN
+from minatar_dqn.utils import my_logging
+from minatar_dqn.my_dqn import build_environment
 
 from experiments.experiment_utils import (
     seed_everything,
@@ -48,54 +50,81 @@ def get_state(s):
     return (torch.tensor(s, device=device).permute(2, 0, 1)).unsqueeze(0).float()
 
 
-class PruningExperiment:
+class PruningExperiment(AgentDQN):
     def __init__(
         self,
         logger,
-        game,
-        model_params_file_name,
+        config,
+        model_path,
         exp_out_file,
         pruning_function,
         experiment_info,
     ):
         self.logger = logger
-        self.game = game
-        self.model_params_file_name = model_params_file_name
+        self.config = config
+        self.model_path = model_path
         self.exp_out_file = exp_out_file
         self.pruning_function = pruning_function
         self.exp_info = experiment_info
 
-        self.validation_step_cnt = 100_000
-        self.validation_epsilon = 0.001
-        self.episode_termination_limit = 10_000
-
+        agent_params = config["agent_params"]["args_"]
+        self.validation_step_cnt = agent_params["validation_step_cnt"]
+        self.validation_epsilon = agent_params["validation_epsilon"]
+        
+        # other inits needed in AgentDQN function calls
+        self.t = 0
+        
     def initialize_experiment(self):
 
-        seed_everything(0)
+        seed_everything(self.config["seed"])
 
-        # get env dimensions
-        self.env = Environment(self.game, random_seed=0)
-        state_shape = self.env.state_shape()
+        self.validation_env = build_environment(
+            self.config["environment"], self.config["seed"]
+        )
 
+        # returns state as [w, h, channels]
+        state_shape = self.validation_env.observation_space.shape
+
+        # permute to get batch, channel, w, h shape
+        # specific to minatar
         self.in_features = (state_shape[2], state_shape[0], state_shape[1])
         self.in_channels = self.in_features[0]
-        self.num_actions = self.env.num_actions()
+        self.num_actions = self.validation_env.action_space.n
 
-        # placeholder for reading config logic:
-        if "16" in self.model_params_file_name:
-            self.model = Conv_QNET(self.in_features, self.in_channels, self.num_actions, conv_hidden_out_size=16)
+        self.train_s, info = self.validation_env.reset()
+
+        estimator_settings = self.config.get(
+            "estimator", {"model": "Conv_QNET", "args_": {}}
+        )
+
+        if estimator_settings["model"] == "Conv_QNET":
+            self.policy_model = Conv_QNET(
+                self.in_features,
+                self.in_channels,
+                self.num_actions,
+                **estimator_settings["args_"],
+            )
+
+        elif estimator_settings["model"] == "Conv_QNET_one":
+            self.policy_model = Conv_QNET_one(
+                self.in_features,
+                self.in_channels,
+                self.num_actions,
+                **estimator_settings["args_"],
+            )
+
         else:
-            self.model = Conv_QNET(self.in_features, self.in_channels, self.num_actions, conv_hidden_out_size=32)
-        
+            estiamtor_name = estimator_settings["model"]
+            raise ValueError(f"Could not setup estimator. Tried with: {estiamtor_name}")
 
         self.load_model_params()
 
     def load_model_params(self):
-        checkpoint = torch.load(self.model_params_file_name)
-        self.model.load_state_dict(checkpoint["policy_model_state_dict"])
+        checkpoint = torch.load(self.model_path)
+        self.policy_model.load_state_dict(checkpoint["policy_model_state_dict"])
 
     def prune_model_globally(self, pruning_amount):
-        for name, module in self.model.named_modules():
+        for name, module in self.policy_model.named_modules():
             # structured pruning in all 2D-conv layers
             if isinstance(module, torch.nn.Conv2d):
                 prune.ln_structured(
@@ -105,137 +134,6 @@ class PruningExperiment:
             # unstructured pruning in linear layers
             elif isinstance(module, torch.nn.Linear):
                 prune.l1_unstructured(module, name="weight", amount=pruning_amount)
-
-    def get_vector_stats(self, vector):
-        stats = {}
-
-        if len(vector) > 0:
-            stats["min"] = np.nanmin(vector)
-            stats["max"] = np.nanmax(vector)
-            stats["mean"] = np.nanmean(vector)
-            stats["median"] = np.nanmedian(vector)
-            stats["std"] = np.nanstd(vector)
-
-        else:
-            stats["min"] = None
-            stats["max"] = None
-            stats["mean"] = None
-            stats["median"] = None
-            stats["std"] = None
-
-        return stats
-
-    def compute_validation_epoch_stats(
-        self,
-        episode_rewards,
-        episode_nr_frames,
-        ep_max_qs,
-        epoch_time,
-    ):
-        stats = {}
-
-        stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
-        stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
-        stats["episode_max_qs"] = self.get_vector_stats(ep_max_qs)
-        stats["epoch_time"] = epoch_time
-
-        return stats
-
-    def select_action(self, state, num_actions, epsilon=None, random_action=False):
-        max_q = np.nan
-
-        # A uniform random policy
-        if random_action:
-            action = torch.tensor([[random.randrange(num_actions)]], device=device)
-            return action
-
-        if np.random.binomial(1, epsilon) == 1:
-            action = torch.tensor([[random.randrange(num_actions)]], device=device)
-        else:
-            action, max_q = self.get_max_q_and_action(state)
-
-        return action, max_q
-
-    def get_max_q_and_action(self, state):
-        with torch.no_grad():
-            maxq_and_action = self.model(state).max(1)
-            q_val = maxq_and_action[0].item()
-            action = maxq_and_action[1].view(1, 1)
-            return action, q_val
-
-    def validate_episode(self, valiation_t, episode_termination_limit):
-
-        current_episode_reward = 0.0
-        ep_frames = 0
-        max_qs = []
-
-        # Initialize the environment and start state
-        self.env.reset()
-        s = get_state(self.env.state())
-
-        is_terminated = False
-        while (
-            (not is_terminated)
-            and ep_frames < episode_termination_limit
-            and (valiation_t + ep_frames)
-            < self.validation_step_cnt  # can early stop episode if the frame limit was reached
-        ):
-
-            action, max_q = self.select_action(
-                s, self.num_actions, epsilon=self.validation_epsilon
-            )
-            reward, is_terminated = self.env.act(action)
-            reward = torch.tensor([[reward]], device=device).float()
-            is_terminated = torch.tensor([[is_terminated]], device=device)
-            s_prime = get_state(self.env.state())
-
-            max_qs.append(max_q)
-
-            current_episode_reward += reward.item()
-
-            ep_frames += 1
-
-            # Continue the process
-            s = s_prime
-
-        # end of episode, return episode statistics:
-        new_valiation_t = valiation_t + ep_frames
-
-        return (
-            new_valiation_t,
-            current_episode_reward,
-            ep_frames,
-            max_qs,
-        )
-
-    def validate_epoch(self):
-        episode_rewards = []
-        episode_nr_frames = []
-        valiation_t = 0
-
-        start_time = datetime.datetime.now()
-        while valiation_t < self.validation_step_cnt:
-            (
-                valiation_t,
-                current_episode_reward,
-                ep_frames,
-                ep_max_qs,
-            ) = self.validate_episode(valiation_t, self.episode_termination_limit)
-
-            valiation_t += ep_frames
-            episode_rewards.append(current_episode_reward)
-            episode_nr_frames.append(ep_frames)
-
-        end_time = datetime.datetime.now()
-        epoch_time = end_time - start_time
-
-        epoch_stats = self.compute_validation_epoch_stats(
-            episode_rewards,
-            episode_nr_frames,
-            ep_max_qs,
-            epoch_time,
-        )
-        return epoch_stats
 
     def save_experiment_results(self, experiment_results):
         torch.save(
@@ -250,14 +148,14 @@ class PruningExperiment:
         experiment_results = {}
         for pv in pruning_values:
             self.logger.info(
-                f"Starting pruning experiment for {self.game} with pruning method {self.pruning_function.__name__} using pruning factor {pv}"
+                f"Starting pruning experiment with pruning method {self.pruning_function.__name__} using pruning factor {pv}"
             )
             stats = self.single_experiment(pv)
             experiment_results[pv] = stats
 
         self.save_experiment_results(experiment_results)
         self.logger.info(
-            f"Ended experiment for {self.game} with pruning method {self.pruning_function.__name__}."
+            f"Ended experiment with pruning method {self.pruning_function.__name__}."
         )
 
     def perform_single_experiment(self, pruning_value):
@@ -265,7 +163,7 @@ class PruningExperiment:
 
         if self.pruning_function:
             self.logger.info(
-                f"Starting pruning experiment for {self.game} with pruning method {self.pruning_function.__name__} using pruning factor {pruning_value}"
+                f"Starting pruning experiment with pruning method {self.pruning_function.__name__} using pruning factor {pruning_value}"
             )
         else:
             self.logger.info(
@@ -278,7 +176,7 @@ class PruningExperiment:
 
         if self.pruning_function:
             self.logger.info(
-                f"Ended experiment for {self.game} with pruning method {self.pruning_function.__name__}."
+                f"Ended experiment with pruning method {self.pruning_function.__name__}."
             )
         else:
             self.logger.info(f"Baseline experiment ended")
@@ -287,9 +185,10 @@ class PruningExperiment:
 
         self.initialize_experiment()
         if pruning_value > 0 and self.pruning_function:
-            self.pruning_function(self.model, pruning_value)
+            self.pruning_function(self.policy_model, pruning_value)
 
         validation_stats = self.validate_epoch()
+        self.display_validation_epoch_info(validation_stats)
 
         return validation_stats
 
@@ -354,7 +253,7 @@ def pruning_method_4(model, pruning_factor):
 
 
 ### Experiment jobs
-def create_baseline_experiment_result(logger, game, exp_out_folder, params_file_name):
+def create_baseline_experiment_result(logger, config, model_path, exp_out_folder):
 
     exp_out_file = os.path.join(exp_out_folder, "baseline")
 
@@ -362,8 +261,8 @@ def create_baseline_experiment_result(logger, game, exp_out_folder, params_file_
 
     pruning_experiment = PruningExperiment(
         logger=logger,
-        game=game,
-        model_params_file_name=params_file_name,
+        config=config,
+        model_path=model_path,
         exp_out_file=exp_out_file,
         pruning_function=None,
         experiment_info="Baseline performance, no pruning was done.",
@@ -372,30 +271,30 @@ def create_baseline_experiment_result(logger, game, exp_out_folder, params_file_
     pruning_experiment.perform_single_experiment(0.00)
 
 
-def run_experiment_with_params(params):
+def run_experiment_with_params(
+    logger, config, model_path, path_to_pruning_experiment_folder, pruning_params
+):
     # Extract individual parameters from the dictionary
-    logger = setup_logger()
-    game = params["game"]
-    exp_out_folder = params["exp_out_folder"]
-    exp_out_file_name = params["exp_out_file_name"]
-    params_file_name = params["params_file_name"]
-    pruning_function = params["pruning_function"]
-    if "experiment_info" in params:
-        experiment_info = params["experiment_info"]
+
+    exp_out_file_name = pruning_params["exp_out_file_name"]
+    pruning_function = pruning_params["pruning_function"]
+
+    if "experiment_info" in pruning_params:
+        experiment_info = pruning_params["experiment_info"]
     else:
         experiment_info = pruning_function.__doc__
 
     logger.info(f"Initializing experiment: {exp_out_file_name}")
 
     ### Setup and run pruning experiment
-    exp_out_file = os.path.join(exp_out_folder, exp_out_file_name)
+    exp_out_file = os.path.join(path_to_pruning_experiment_folder, exp_out_file_name)
 
     seed_everything(0)
 
     pruning_experiment = PruningExperiment(
         logger=logger,
-        game=game,
-        model_params_file_name=params_file_name,
+        config=config,
+        model_path=model_path,
         exp_out_file=exp_out_file,
         pruning_function=pruning_function,
         experiment_info=experiment_info,
@@ -408,46 +307,125 @@ def run_experiment_with_params(params):
     return True
 
 
-def run_parallel_pruning_experiment(logger, game, exp_out_folder, params_file_name):
+def run_parallel_pruning_experiment(
+    logger,
+    config,
+    model_path,
+    path_to_pruning_experiment_folder,
+):
     exp_1_params = {
-        "game": game,
-        "exp_out_folder": exp_out_folder,
         "exp_out_file_name": "pruning_results_1",
-        "params_file_name": params_file_name,
         "pruning_function": pruning_method_1,
     }
 
     exp_2_params = {
-        "game": game,
-        "exp_out_folder": exp_out_folder,
         "exp_out_file_name": "pruning_results_2",
-        "params_file_name": params_file_name,
         "pruning_function": pruning_method_2,
     }
 
     exp_3_params = {
-        "game": game,
-        "exp_out_folder": exp_out_folder,
         "exp_out_file_name": "pruning_results_3",
-        "params_file_name": params_file_name,
         "pruning_function": pruning_method_3,
     }
 
     exp_4_params = {
-        "game": game,
-        "exp_out_folder": exp_out_folder,
         "exp_out_file_name": "pruning_results_4",
-        "params_file_name": params_file_name,
         "pruning_function": pruning_method_4,
     }
 
     experiment_params = [exp_1_params, exp_2_params, exp_3_params, exp_4_params]
 
-    # initializer=setup_logger
-    with multiprocessing.Pool() as pool:
-        statuses = list(pool.map(run_experiment_with_params, experiment_params))
+    for pruning_params in experiment_params:
+        run_experiment_with_params(
+            logger,
+            config,
+            model_path,
+            path_to_pruning_experiment_folder,
+            pruning_params,
+        )
 
-    logger.info(f"Parallel pruning status: {str(statuses)}")
+
+def collect_config_and_model_file(experiments_folder):
+
+    # find the configurations, each training experiment has one
+    config_file_path_list = search_files_ending_with_string(
+        experiments_folder, "config"
+    )
+
+    training_experiment_folders = [
+        os.path.dirname(file) for file in config_file_path_list
+    ]
+
+    experiment_paths = []
+    for experiment_path in training_experiment_folders:
+        exp_paths = {}
+
+        config_file_path_list = search_files_ending_with_string(
+            experiment_path, "config"
+        )
+
+        model_file_path_list = search_files_ending_with_string(experiment_path, "model")
+
+        exp_paths["training_folder_path"] = experiment_path
+        exp_paths["config_path"] = config_file_path_list[0]
+        exp_paths["model_path"] = model_file_path_list[0]
+        experiment_paths.append(exp_paths)
+
+    return experiment_paths
+
+
+def run_pruning_experiment(experiment_paths):
+
+    model_path = experiment_paths["model_path"]
+    config_path = experiment_paths["config_path"]
+    training_timestamp_folder = experiment_paths["training_timestamp_folder"]
+    pruning_outputs_folder_path = experiment_paths["pruning_output_base_path"]
+
+    left_path, abs_path_experiment_config = split_path_at_substring(
+        config_path, training_timestamp_folder
+    )
+    folder_structure, config_filename = os.path.split(abs_path_experiment_config)
+    path_to_pruning_experiment_folder = os.path.join(
+        pruning_outputs_folder_path, training_timestamp_folder, folder_structure
+    )
+    Path(path_to_pruning_experiment_folder).mkdir(parents=True, exist_ok=True)
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    logger = my_logging.setup_logger(
+        env_name=config["environment"],
+        folder_path=None,
+        identifier_string=folder_structure,
+    )
+
+    create_baseline_experiment_result(
+        logger,
+        config,
+        model_path,
+        path_to_pruning_experiment_folder,
+    )
+    run_parallel_pruning_experiment(
+        logger,
+        config,
+        model_path,
+        path_to_pruning_experiment_folder,
+    )
+
+    return True
+
+
+def start_parallel_pruning_session(
+    experiment_paths, training_timestamp_folder, pruning_output_path, processes=8
+):
+    for exp_paths in experiment_paths:
+        exp_paths["pruning_output_base_path"] = pruning_output_path
+        exp_paths["training_timestamp_folder"] = training_timestamp_folder
+
+    with multiprocessing.Pool(processes=processes) as pool:
+        statuses = list(pool.map(run_pruning_experiment, experiment_paths))
+
+    print(f"Parallel job run statuses: {statuses}")
 
 
 def main():
@@ -457,54 +435,37 @@ def main():
     There is one additional nesting level for the pruning method
     """
 
-
     seed_everything(0)
-    logger = setup_logger()
+    logger = my_logging.setup_logger()
 
     # Collect all paths to models in a specified folder
     training_outputs_folder_path = (
         r"D:\Work\PhD\minatar_work\experiments\training\outputs"
     )
-    training_timestamp_folder = "2023_03_02-13_31_43"
+    training_timestamp_folder = "2023_03_17-02_50_37"
 
-    model_file_path_list = search_files_ending_with_string(
-        os.path.join(training_outputs_folder_path, training_timestamp_folder), "model"
+    experiment_paths = collect_config_and_model_file(
+        os.path.join(training_outputs_folder_path, training_timestamp_folder)
     )
 
-    # build and create paths to pruning experiment outputs
+    # filter out the experiments with a single layer for now...
+    experiment_paths = [
+        exp_paths
+        for exp_paths in experiment_paths
+        if "conv_model_one_16_layer" not in exp_paths["training_folder_path"]
+    ]
+
     pruning_outputs_folder_path = (
         r"D:\Work\PhD\minatar_work\experiments\pruning\outputs"
     )
 
-    for model_path in model_file_path_list:
-        # # if "breakout" in model_path:
-        if not "one_layer" in model_path:
+    start_parallel_pruning_session(
+        experiment_paths,
+        training_timestamp_folder=training_timestamp_folder,
+        pruning_output_path=pruning_outputs_folder_path,
+    )
 
-            # game = "breakout"
-            # print(model_path)
-
-            left_path, abs_path_experiment_model = split_path_at_substring(
-                model_path, training_timestamp_folder
-            )
-            folder_structure, model_name = os.path.split(abs_path_experiment_model)
-            path_to_pruning_experiment_folder = os.path.join(
-                pruning_outputs_folder_path, training_timestamp_folder, folder_structure
-            )
-            Path(path_to_pruning_experiment_folder).mkdir(parents=True, exist_ok=True)
-            
-            game = model_name.split("_")[-3]
-            if game == "invaders":
-                game = "space_invaders"
-
-            create_baseline_experiment_result(logger, game, path_to_pruning_experiment_folder, model_path)
-
-            run_parallel_pruning_experiment(logger, game, path_to_pruning_experiment_folder, model_path)
-
-
-    handlers = logger.handlers[:]
-    for handler in handlers:
-        logger.removeHandler(handler)
-        handler.close()
+    my_logging.cleanup_file_handlers()
 
 
 if __name__ == "__main__":
