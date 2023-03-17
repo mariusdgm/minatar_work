@@ -149,7 +149,7 @@ def subplots_stats(train_log_file_name, stat_name, show_epochs):
     for log_name in train_log_file_name:
         training_stats, validation_stats = load_training_stats(log_name)
         exp_file_name = os.path.basename(log_name)
-        # exp_name = exp_file_name
+        
         df_stats = get_df_of_stat(
             validation_stats, stat_name=stat_name, show_epochs=show_epochs, experiment=exp_file_name
         )
@@ -157,6 +157,8 @@ def subplots_stats(train_log_file_name, stat_name, show_epochs):
             df = df_stats
         else:
             df = pd.concat([df, df_stats], ignore_index=True)
+
+    print(df)
 
     plot_stat_log_multi(
         df,
@@ -392,7 +394,11 @@ if __name__ == "__main__":
     training_outputs_folder_path = (
         r"D:\Work\PhD\minatar_work\experiments\training\outputs"
     )
-    training_timestamp_folder = "2023_03_10-09_42_31"
+
+
+    # training_timestamp_folder = "2023_03_16-14_45_10"
+
+    training_timestamp_folder = "2023_03_17-02_50_37"
 
     model_file_path_list = search_files_ending_with_string(
         os.path.join(training_outputs_folder_path, training_timestamp_folder), "stats"
@@ -400,10 +406,8 @@ if __name__ == "__main__":
 
     # game = "space_invaders"
     # game = "breakout"
-    # game = "seaquest"
-    game = "asterix"
-
-
+    game = "seaquest"
+    # game = "asterix"
 
     model_file_path_list = [file for file in model_file_path_list if game in file]
     # print(model_file_path_list)
