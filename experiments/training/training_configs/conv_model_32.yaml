@@ -1,4 +1,0 @@
-estimator:
-  model: Conv_QNET
-  args_:
-    conv_hidden_out_size: 32

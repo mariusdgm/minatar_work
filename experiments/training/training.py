@@ -179,6 +179,8 @@ def get_training_file_names(exp_folder_path, experiment_file_string):
 
 def run_training_experiment(config):
 
+    seed_everything(config["seed"])
+
     path_experiments_outputs = config["path_experiments_outputs"]
     exp_folder_path = create_path_to_experiment_folder(
         config,

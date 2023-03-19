@@ -3,7 +3,14 @@ import torch.nn as nn
 
 # TODO: try with 8, 16, 32, 64 ; linear 32, 64 etc
 class Conv_QNET(nn.Module):
-    def __init__(self, in_features, in_channels, num_actions, conv_hidden_out_size=16):
+    def __init__(
+        self,
+        in_features,
+        in_channels,
+        num_actions,
+        conv_hidden_out_size=16,
+        lin_hidden_out_size=64,
+    ):
         super().__init__()
 
         self.in_features = in_features
@@ -11,19 +18,27 @@ class Conv_QNET(nn.Module):
         self.num_actions = num_actions
 
         self.conv_hidden_out_size = conv_hidden_out_size
+        self.lin_hidden_out_size = lin_hidden_out_size
 
         # conv layers
         self.features = nn.Sequential(
-            nn.Conv2d(self.in_channels, self.conv_hidden_out_size, kernel_size=3, stride=1),
+            nn.Conv2d(
+                self.in_channels, self.conv_hidden_out_size, kernel_size=3, stride=1
+            ),
             nn.ReLU(),
-            nn.Conv2d(self.conv_hidden_out_size, self.conv_hidden_out_size, kernel_size=3, stride=1),
+            nn.Conv2d(
+                self.conv_hidden_out_size,
+                self.conv_hidden_out_size,
+                kernel_size=3,
+                stride=1,
+            ),
             nn.ReLU(),
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(self.size_linear_unit(), 128),
+            nn.Linear(self.size_linear_unit(), self.lin_hidden_out_size),
             nn.ReLU(),
-            nn.Linear(128, self.num_actions),
+            nn.Linear(self.lin_hidden_out_size, self.num_actions),
         )
 
     def size_linear_unit(self):
@@ -38,6 +53,7 @@ class Conv_QNET(nn.Module):
         x = self.fc(x)
         return x
 
+
 class Conv_QNET_one(nn.Module):
     def __init__(self, in_features, in_channels, num_actions, conv_hidden_out_size=16):
         super().__init__()
@@ -50,7 +66,9 @@ class Conv_QNET_one(nn.Module):
 
         # conv layers
         self.features = nn.Sequential(
-            nn.Conv2d(self.in_channels, self.conv_hidden_out_size, kernel_size=3, stride=1),
+            nn.Conv2d(
+                self.in_channels, self.conv_hidden_out_size, kernel_size=3, stride=1
+            ),
             nn.ReLU(),
         )
 

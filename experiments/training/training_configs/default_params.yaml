@@ -1,5 +1,5 @@
 epochs_to_train: 30
-seeds: [0]
+seeds: [0, 1, 2]
 # environments: [breakout]
 environments: [breakout, seaquest, space_invaders, asterix]
 
@@ -28,6 +28,7 @@ estimator:
   model: Conv_QNET
   args_:
     conv_hidden_out_size: 16
+    lin_hidden_out_size: 64
 
 optim:
   name: Adam
