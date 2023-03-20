@@ -10,7 +10,7 @@ import argparse
 import torch.optim as optim
 import torch.nn.functional as F
 
-import gym 
+import gym
 
 from minatar_dqn.replay_buffer import ReplayBuffer
 from experiments.experiment_utils import seed_everything
@@ -321,13 +321,14 @@ class AgentDQN:
             action = maxq_and_action[1].view(1, 1)
             return action, q_val
 
-
     def train(self, train_epochs):
         if not self.training_stats:
             self.logger.info(f"Starting training session at: {self.t}")
         else:
             epochs_left_to_train = train_epochs - len(self.training_stats)
-            self.logger.info(f"Resuming training session at: {self.t} ({epochs_left_to_train} epochs left)")
+            self.logger.info(
+                f"Resuming training session at: {self.t} ({epochs_left_to_train} epochs left)"
+            )
             train_epochs = epochs_left_to_train
 
         for epoch in range(train_epochs):
@@ -352,6 +353,10 @@ class AgentDQN:
 
             self.logger.info(f"Epoch {epoch} completed in {epoch_time}")
             self.logger.info("\n")
+
+        self.save_checkpoint(
+            self.model_file, self.replay_buffer_file, self.train_stats_file
+        )
 
         self.logger.info(
             f"Ended training session after {train_epochs} epochs at t = {self.t}"
@@ -519,7 +524,9 @@ class AgentDQN:
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
-            s_prime, reward, is_terminated, truncated, info = self.validation_env.step(action)
+            s_prime, reward, is_terminated, truncated, info = self.validation_env.step(
+                action
+            )
 
             max_qs.append(max_q)
 
@@ -554,12 +561,16 @@ class AgentDQN:
         ):  # can early stop episode if the frame limit was reached
 
             action, max_q = self.select_action(self.train_s, self.t, self.num_actions)
-            s_prime, reward, is_terminated, truncated, info = self.train_env.step(action)
+            s_prime, reward, is_terminated, truncated, info = self.train_env.step(
+                action
+            )
 
             # reward = torch.tensor([[reward]], device=device).float()
             # is_terminated = torch.tensor([[is_terminated]], device=device)
 
-            self.replay_buffer.append(self.train_s, action, reward, s_prime, is_terminated)
+            self.replay_buffer.append(
+                self.train_s, action, reward, s_prime, is_terminated
+            )
 
             self.max_qs.append(max_q)
 
@@ -593,7 +604,7 @@ class AgentDQN:
             self.ep_frames += 1
 
             # Continue the process
-            self.train_s  = s_prime
+            self.train_s = s_prime
 
         # end of episode, return episode statistics:
         return (
