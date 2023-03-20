@@ -323,7 +323,12 @@ class AgentDQN:
 
 
     def train(self, train_epochs):
-        self.logger.info(f"Starting/resuming training session at: {self.t}")
+        if not self.training_stats:
+            self.logger.info(f"Starting training session at: {self.t}")
+        else:
+            epochs_left_to_train = train_epochs - len(self.training_stats)
+            self.logger.info(f"Resuming training session at: {self.t} ({epochs_left_to_train} epochs left)")
+            train_epochs = epochs_left_to_train
 
         for epoch in range(train_epochs):
             start_time = datetime.datetime.now()
