@@ -37,3 +37,34 @@ def split_path_at_substring(path, substring):
         left = ""
         right = path
     return left, right
+
+def collect_config_and_model_files(experiments_folder):
+
+    # find the configurations, each training experiment has one
+    config_file_path_list = search_files_ending_with_string(
+        experiments_folder, "config"
+    )
+
+    training_experiment_folders = [
+        os.path.dirname(file) for file in config_file_path_list
+    ]
+
+    experiment_paths = []
+    for experiment_path in training_experiment_folders:
+        exp_paths = {}
+
+        config_file_path_list = search_files_ending_with_string(
+            experiment_path, "config"
+        )
+
+        model_file_path_list = search_files_ending_with_string(experiment_path, "model")
+
+        stats_file_path_list = search_files_ending_with_string(experiment_path, "train_stats")
+
+        exp_paths["training_folder_path"] = experiment_path
+        exp_paths["config_path"] = config_file_path_list[0]
+        exp_paths["model_path"] = model_file_path_list[0]
+        exp_paths["stats_path"] = stats_file_path_list[0]
+        experiment_paths.append(exp_paths)
+
+    return experiment_paths

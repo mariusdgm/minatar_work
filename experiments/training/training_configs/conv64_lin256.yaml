@@ -1,3 +1,5 @@
+experiment_name: conv64_lin256
+
 estimator:
   model: Conv_QNET
   args_:

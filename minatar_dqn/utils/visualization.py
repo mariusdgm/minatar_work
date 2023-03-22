@@ -1,9 +1,5 @@
 import os, sys
 
-# TODO: formulate next steps
-# spectral norm, does it increase prunability
-# pruning during training instead of after training
-
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(proj_root)
 
@@ -375,7 +371,6 @@ if __name__ == "__main__":
     seed = "0"
 
     pruning_method = "pruning_results_1"
-
 
     default_save_folder = os.path.join(base_path, timestamp_str, model_str, env, seed)
     baseline_file_path = os.path.join(default_save_folder, "baseline")

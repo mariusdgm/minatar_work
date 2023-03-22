@@ -27,6 +27,7 @@ from experiments.experiment_utils import (
     seed_everything,
     search_files_ending_with_string,
     split_path_at_substring,
+    collect_config_and_model_files
 )
 
 
@@ -345,33 +346,7 @@ def run_parallel_pruning_experiment(
         )
 
 
-def collect_config_and_model_file(experiments_folder):
 
-    # find the configurations, each training experiment has one
-    config_file_path_list = search_files_ending_with_string(
-        experiments_folder, "config"
-    )
-
-    training_experiment_folders = [
-        os.path.dirname(file) for file in config_file_path_list
-    ]
-
-    experiment_paths = []
-    for experiment_path in training_experiment_folders:
-        exp_paths = {}
-
-        config_file_path_list = search_files_ending_with_string(
-            experiment_path, "config"
-        )
-
-        model_file_path_list = search_files_ending_with_string(experiment_path, "model")
-
-        exp_paths["training_folder_path"] = experiment_path
-        exp_paths["config_path"] = config_file_path_list[0]
-        exp_paths["model_path"] = model_file_path_list[0]
-        experiment_paths.append(exp_paths)
-
-    return experiment_paths
 
 
 def run_pruning_experiment(experiment_paths):
@@ -442,18 +417,11 @@ def main():
     training_outputs_folder_path = (
         r"D:\Work\PhD\minatar_work\experiments\training\outputs"
     )
-    training_timestamp_folder = "2023_03_17-02_50_37"
+    training_timestamp_folder = "2023_03_19-02_07_18"
 
-    experiment_paths = collect_config_and_model_file(
+    experiment_paths = collect_config_and_model_files(
         os.path.join(training_outputs_folder_path, training_timestamp_folder)
     )
-
-    # filter out the experiments with a single layer for now...
-    experiment_paths = [
-        exp_paths
-        for exp_paths in experiment_paths
-        if "conv_model_one_16_layer" not in exp_paths["training_folder_path"]
-    ]
 
     pruning_outputs_folder_path = (
         r"D:\Work\PhD\minatar_work\experiments\pruning\outputs"
