@@ -25,9 +25,9 @@ from minatar_dqn.my_dqn import build_environment
 
 from experiments.experiment_utils import (
     seed_everything,
-    search_files_ending_with_string,
+    search_files_containing_string,
     split_path_at_substring,
-    collect_config_and_model_files
+    collect_training_output_files
 )
 
 
@@ -380,12 +380,17 @@ def run_pruning_experiment(experiment_paths):
         model_path,
         path_to_pruning_experiment_folder,
     )
+
     run_parallel_pruning_experiment(
         logger,
         config,
         model_path,
         path_to_pruning_experiment_folder,
     )
+
+    config_to_record = os.path.join(path_to_pruning_experiment_folder, os.path.basename(config_path))
+    with open(config_to_record, "w") as file:
+        yaml.dump(config, file)
 
     return True
 
@@ -419,7 +424,7 @@ def main():
     )
     training_timestamp_folder = "2023_03_19-02_07_18"
 
-    experiment_paths = collect_config_and_model_files(
+    experiment_paths = collect_training_output_files(
         os.path.join(training_outputs_folder_path, training_timestamp_folder)
     )
 

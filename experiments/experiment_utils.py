@@ -19,14 +19,25 @@ def seed_everything(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-def search_files_ending_with_string(rootdir, search_string):
+def search_files_containing_string(rootdir, search_string, substring_location = "ending"):
     filepaths = []
     for subdir, dirs, files in os.walk(rootdir):
         for file in files:
-            if file.endswith(search_string):
-                filepath = os.path.join(subdir, file)
-                filepaths.append(filepath)
+            if substring_location == "ending":
+                if file.endswith(search_string):
+                    filepath = os.path.join(subdir, file)
+                    filepaths.append(filepath)
+            elif substring_location == "starting":
+                if file.startswith(search_string):
+                    filepath = os.path.join(subdir, file)
+                    filepaths.append(filepath)
+            elif substring_location == "containing":
+                if search_string in file:
+                    filepath = os.path.join(subdir, file)
+                    filepaths.append(filepath)
     return filepaths
+
+
 
 def split_path_at_substring(path, substring):
     index = path.find(substring)
@@ -38,10 +49,10 @@ def split_path_at_substring(path, substring):
         right = path
     return left, right
 
-def collect_config_and_model_files(experiments_folder):
+def collect_training_output_files(experiments_folder):
 
     # find the configurations, each training experiment has one
-    config_file_path_list = search_files_ending_with_string(
+    config_file_path_list = search_files_containing_string(
         experiments_folder, "config"
     )
 
@@ -53,13 +64,13 @@ def collect_config_and_model_files(experiments_folder):
     for experiment_path in training_experiment_folders:
         exp_paths = {}
 
-        config_file_path_list = search_files_ending_with_string(
+        config_file_path_list = search_files_containing_string(
             experiment_path, "config"
         )
 
-        model_file_path_list = search_files_ending_with_string(experiment_path, "model")
+        model_file_path_list = search_files_containing_string(experiment_path, "model")
 
-        stats_file_path_list = search_files_ending_with_string(experiment_path, "train_stats")
+        stats_file_path_list = search_files_containing_string(experiment_path, "train_stats")
 
         exp_paths["training_folder_path"] = experiment_path
         exp_paths["config_path"] = config_file_path_list[0]
@@ -68,3 +79,34 @@ def collect_config_and_model_files(experiments_folder):
         experiment_paths.append(exp_paths)
 
     return experiment_paths
+
+def collect_pruning_output_files(experiments_folder):
+
+    # find the configurations, each training experiment has one
+    config_file_path_list = search_files_containing_string(
+        experiments_folder, "config"
+    )
+
+    pruning_experiment_folders = [
+        os.path.dirname(file) for file in config_file_path_list
+    ]
+
+    experiment_paths = []
+    for experiment_path in pruning_experiment_folders:
+        exp_paths = {}
+
+        config_file_path_list = search_files_containing_string(
+            experiment_path, "config"
+        )
+
+        pruning_stats_file_path_list = search_files_containing_string(experiment_path, "pruning_results",  substring_location="starting")
+        baseline_stats_file_path_list = search_files_containing_string(experiment_path, "baseline",  substring_location="starting")
+
+        exp_paths["pruning_folder_path"] = experiment_path
+        exp_paths["config_path"] = config_file_path_list[0]
+        exp_paths["pruning_stats_paths"] = pruning_stats_file_path_list # more results expected
+        exp_paths["baseline_stats_path"] = baseline_stats_file_path_list[0]
+        experiment_paths.append(exp_paths)
+
+    return experiment_paths
+    
