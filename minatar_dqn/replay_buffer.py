@@ -3,6 +3,7 @@ import numpy as np
 import random
 import pickle
 
+
 class ReplayBuffer:
     def __init__(self, max_size, state_dim, action_dim, n_step):
         self.max_size = max_size
@@ -22,12 +23,6 @@ class ReplayBuffer:
             raise ValueError("Not enough transitions to sample")
 
         samples = random.sample(self.buffer, batch_size)
-
-        # TODO: try with:
-        # states, actions, rewards, next_states, dones = zip(*samples)
-        # np.concat?, we want to avoid allocating zeroes and copying
-
-        # TODO: benchmark the 2 variants of sampling (timeit)
 
         states = np.zeros((batch_size, *self.state_dim))
         actions = np.zeros((batch_size, self.action_dim))
@@ -75,9 +70,9 @@ class ReplayBuffer:
         return states, actions, rewards, next_states, dones
 
     def save(self, file_name):
-        with open(file_name, 'wb') as f:
+        with open(file_name, "wb") as f:
             pickle.dump(self.buffer, f)
 
     def load(self, file_name):
-        with open(file_name, 'rb') as f:
+        with open(file_name, "rb") as f:
             self.buffer = pickle.load(f)

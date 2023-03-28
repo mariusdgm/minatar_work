@@ -18,6 +18,7 @@ from minatar_dqn.utils.my_logging import setup_logger
 from minatar_dqn.models import Conv_QNET, Conv_QNET_one
 from minatar_dqn.minatar_gym_wrappers import PermuteMinatarObsSpace
 
+
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
 
@@ -655,6 +656,7 @@ class AgentDQN:
         )
 
     def model_learn(self, sample):
+        """Compute the loss with TD learning."""
         state, action, reward, next_state, terminated = sample
 
         state = torch.from_numpy(state)

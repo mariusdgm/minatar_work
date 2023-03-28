@@ -1,12 +1,12 @@
-epochs_to_train: 30
-seeds: [0, 1, 2]
-# environments: [breakout]
-environments: [breakout, seaquest, space_invaders, asterix]
+epochs_to_train: 2
+seeds: [0]
+environments: [breakout]
+# environments: [breakout, seaquest, space_invaders, asterix]
 
 agent_params:
   agent: AgentDQN
   args_:
-    train_step_cnt: 200_000
+    train_step_cnt: 200_00
     validation_enabled: True
     validation_step_cnt: 125_000
     validation_epsilon: 0.001
