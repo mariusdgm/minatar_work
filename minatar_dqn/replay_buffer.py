@@ -18,6 +18,12 @@ class ReplayBuffer:
     def append(self, state, action, reward, next_state, done):
         self.buffer.append((state, action, reward, next_state, done))
 
+    def sample_new(self, batch_size):
+        samples = random.sample(self.buffer, batch_size)
+        states, actions, rewards, next_states, dones = zip(*samples)
+
+        return states, actions, rewards, next_states, dones
+
     def sample(self, batch_size):
         if batch_size > len(self):
             raise ValueError("Not enough transitions to sample")

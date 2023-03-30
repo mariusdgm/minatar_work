@@ -296,7 +296,6 @@ class AgentDQN:
         if np.random.binomial(1, epsilon) == 1:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
         else:
-            state = torch.tensor(state, device=device).unsqueeze(0).float()
             action, max_q = self.get_max_q_and_action(state)
 
         return action, max_q
@@ -519,15 +518,19 @@ class AgentDQN:
 
         # Initialize the environment and start state
         s, info = self.validation_env.reset()
+        s = torch.tensor(s, device=device).unsqueeze(0).float()
 
         is_terminated = False
         while not is_terminated:
+            
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
             s_prime, reward, is_terminated, truncated, info = self.validation_env.step(
                 action
             )
+            s_prime = torch.tensor(s_prime, device=device).unsqueeze(0).float()
+            
 
             max_qs.append(max_q)
 
@@ -551,6 +554,7 @@ class AgentDQN:
         self.max_qs = []
 
         self.train_s, info = self.train_env.reset()
+        self.train_s = torch.tensor(self.train_s, device=device).unsqueeze(0).float()
 
     def train_episode(self, epoch_t, train_frames):
         policy_trained_times = 0
