@@ -27,33 +27,28 @@ class ReplayBuffer:
 
         return states, actions, rewards, next_states, dones
 
-    def sample_n_step(self, batch_size):
+    def sample_n_step(self, batch_size, stride=1):
         if batch_size > len(self):
             raise ValueError("Not enough transitions to sample")
 
-        samples = random.sample(self.buffer, batch_size)
+        transitions = []
+        for _ in range(batch_size):
+            start_idx = random.randint(0, len(self) - self.n_step*stride - 1)
+            end_idx = start_idx + self.n_step*stride
+            samples = self.buffer[start_idx:end_idx:stride]
 
-        states = np.zeros((batch_size, *self.state_dim))
-        actions = np.zeros((batch_size, self.action_dim))
-        rewards = np.zeros((batch_size, self.n_step))
-        next_states = np.zeros((batch_size, *self.state_dim))
-        dones = np.zeros((batch_size, self.n_step))
+            state, _, _, _, _ = samples[0]
+            _, _, _, next_state, done = samples[-1]
 
-        for i, sample in enumerate(samples):
-            state, action, reward, next_state, done = sample
-            for j in range(self.n_step):
-                if j == 0:
-                    states[i] = state
-                    actions[i] = action
-                    rewards[i, j] = reward
-                    next_states[i] = next_state
-                    dones[i, j] = done
-                else:
-                    state, action, reward, next_state, done = self.buffer[
-                        (self.buffer.index(sample) + j) % len(self.buffer)
-                    ]
-                    rewards[i, j] = reward
-                    dones[i, j] = done
+            reward = 0
+            for i in range(self.n_step):
+                _, action, r, _, _ = samples[i*stride]
+                reward += r * pow(0.99, i)
+
+            transitions.append((state, action, reward, next_state, done))
+
+        states, actions, rewards, next_states, dones = zip(*transitions)
+
         return states, actions, rewards, next_states, dones
 
     def save(self, file_name):
