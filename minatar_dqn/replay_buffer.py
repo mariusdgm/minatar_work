@@ -18,31 +18,12 @@ class ReplayBuffer:
     def append(self, state, action, reward, next_state, done):
         self.buffer.append((state, action, reward, next_state, done))
 
-    def sample_new(self, batch_size):
-        samples = random.sample(self.buffer, batch_size)
-        states, actions, rewards, next_states, dones = zip(*samples)
-
-        return states, actions, rewards, next_states, dones
-
     def sample(self, batch_size):
         if batch_size > len(self):
             raise ValueError("Not enough transitions to sample")
 
         samples = random.sample(self.buffer, batch_size)
-
-        states = np.zeros((batch_size, *self.state_dim))
-        actions = np.zeros((batch_size, self.action_dim))
-        rewards = np.zeros(batch_size)
-        next_states = np.zeros((batch_size, *self.state_dim))
-        dones = np.zeros(batch_size)
-
-        for i, sample in enumerate(samples):
-            state, action, reward, next_state, done = sample
-            states[i] = state
-            actions[i] = action
-            rewards[i] = reward
-            next_states[i] = next_state
-            dones[i] = done
+        states, actions, rewards, next_states, dones = zip(*samples)
 
         return states, actions, rewards, next_states, dones
 

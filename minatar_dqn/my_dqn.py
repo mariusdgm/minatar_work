@@ -661,20 +661,20 @@ class AgentDQN:
 
     def model_learn(self, sample):
         """Compute the loss with TD learning."""
-        state, action, reward, next_state, terminated = sample
+        states, actions, rewards, next_states, dones = sample
 
-        state = torch.from_numpy(state)
-        next_state = torch.from_numpy(next_state)
-        action = torch.LongTensor(action)
-        reward = torch.FloatTensor(reward).unsqueeze(1)
-        terminated = torch.FloatTensor(terminated).unsqueeze(1)
+        states = torch.stack(states, dim=0)
+        actions = torch.LongTensor(actions)
+        rewards = torch.Tensor(rewards)
+        next_states = torch.stack(next_states, dim=0)
+        dones = torch.Tensor(dones)
 
-        q_values = self.policy_model(state)
-        selected_q_value = q_values.gather(1, action)
+        q_values = self.policy_model(states)
+        selected_q_value = q_values.gather(1, actions)
 
-        next_q_values = self.target_model(next_state).detach()
+        next_q_values = self.target_model(next_states).detach()
         next_q_values = next_q_values.max(1)[0].unsqueeze(1)
-        expected_q_value = reward + self.gamma * next_q_values * (1 - terminated)
+        expected_q_value = rewards + self.gamma * next_q_values * (1 - dones)
 
         if self.loss_function == "mse_loss":
             loss = F.mse_loss(selected_q_value, expected_q_value)
