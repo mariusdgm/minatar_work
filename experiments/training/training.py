@@ -215,22 +215,15 @@ def run_training_experiment(config):
 
     ### Setup output and loading paths ###
 
-    output_files_paths = get_training_file_names(
-        exp_folder_path, experiment_file_string
-    )
-
-    load_file_paths = None
+    path_previous_experiments_outputs = None
     if "restart_training_timestamp" in config:
         path_previous_experiments_outputs = create_path_to_experiment_folder(
             config, path_experiments_outputs, config["restart_training_timestamp"],
             previous_run_timestamp = True
         )
-        load_file_paths = get_training_file_names(
-            path_previous_experiments_outputs, experiment_file_string
-        )
 
-    config["output_files_paths"] = output_files_paths
-    config["load_file_paths"] = load_file_paths
+    config["experiment_output_folder"] = exp_folder_path
+    config["experiment_name"] = experiment_file_string
 
     config_to_record = os.path.join(exp_folder_path, f"{experiment_file_string}_config")
     with open(config_to_record, "w") as file:
@@ -239,8 +232,9 @@ def run_training_experiment(config):
     experiment_agent = my_dqn.AgentDQN(
         train_env=train_env,
         validation_env=validation_env,
-        output_files_paths=output_files_paths,
-        load_file_paths=load_file_paths,
+        experiment_output_folder=exp_folder_path,
+        experiment_name=experiment_file_string,
+        resume_training_path=path_previous_experiments_outputs,
         save_checkpoints=True,
         logger=logger,
         config=config,

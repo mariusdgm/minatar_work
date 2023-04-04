@@ -25,28 +25,15 @@ from minatar_dqn.minatar_gym_wrappers import PermuteMinatarObsSpace
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 
-# TODO: Maybe implement this as wrapper for env?
-def get_state(s):
-    """
-    Converts the state given by the environment to a tensor of size (in_channel, 10, 10), and then
-    unsqueeze to expand along the 0th dimension so the function returns a tensor of size (1, in_channel, 10, 10).
-
-    Args:
-        s: current state as numpy array
-
-    Returns:
-        current state as tensor, permuted to match expected dimensions
-    """
-    return (torch.tensor(s, device=device).permute(2, 0, 1)).unsqueeze(0).float()
-
 
 class AgentDQN:
     def __init__(
         self,
         train_env,
         validation_env,
-        output_files_paths=None,
-        load_file_paths=None,
+        experiment_output_folder=None,
+        experiment_name=None,
+        resume_training_path=None,
         save_checkpoints=True,
         logger=None,
         config=None,
@@ -56,10 +43,21 @@ class AgentDQN:
         self.train_env = train_env
         self.validation_env = validation_env
 
-        # assign output files
-        self.model_file = output_files_paths["model_file"]
-        self.replay_buffer_file = output_files_paths["replay_buffer_file"]
-        self.train_stats_file = output_files_paths["train_stats_file"]
+        # set up path names
+        self.experiment_output_folder = experiment_output_folder
+        self.experiment_name = experiment_name
+
+        self.model_file_folder = (
+            "model_checkpoints"  # models will be saved at each epoch
+        )
+        self.model_checkpoint_file_basename = "mck"
+
+        self.replay_buffer_file = os.path.join(
+            self.experiment_output_folder, self.experiment_name + "_replay_buffer"
+        )
+        self.train_stats_file = os.path.join(
+            self.experiment_output_folder, self.experiment_name + "_train_stats"
+        )
 
         self.save_checkpoints = save_checkpoints
         self.logger = logger
@@ -79,19 +77,63 @@ class AgentDQN:
         self.validation_stats = []
 
         # check that all paths were provided and that the files can be found
-        if load_file_paths:
-            self._check_load_paths(load_file_paths)
-            self.load_training_state(load_file_paths)
+        if resume_training_path:
+            self.load_training_state(resume_training_path)
 
-    def _check_load_paths(self, load_file_paths):
-        expected_keys = ["model_file", "replay_buffer_file", "train_stats_file"]
-        for file in expected_keys:
-            if file not in load_file_paths:
-                raise KeyError(f"Key {file} missing from load_file_paths argument.")
-            if not os.path.exists(load_file_paths[file]):
+    def _make_model_checkpoint_file_path(self, epoch_cnt=0):
+        """Dynamically build the path where to save the model checkpoint."""
+        return os.path.join(
+            self.experiment_output_folder,
+            self.model_file_folder,
+            f"{self.model_checkpoint_file_basename}_{epoch_cnt}",
+        )
+
+    def load_training_state(self, resume_training_path):
+        """
+        In order to resume training the following files are needed:
+        - ReplayBuffer file
+        - Training stats file
+        - model weights file (found as the last checkpoint in the models subfolder)
+
+        Args:
+            load_file_paths: path to where the files needed to resume training can be found
+        """
+        ### build the file paths
+        resume_files = {}
+
+        resume_files["replay_buffer_file"] = os.path.join(
+            resume_training_path, f"{self.experiment_name}_replay_buffer"
+        )
+        resume_files["train_stats_file"] = os.path.join(
+            resume_training_path, f"{self.experiment_name}_train_stats"
+        )
+
+        # check that the file paths exist
+        for file in resume_files:
+            if not os.path.exists(resume_files[file]):
                 raise FileNotFoundError(
-                    f"Could not find the file {load_file_paths[file]} for {file}."
+                    f"Could not find the file {resume_files[file]} for {file}."
                 )
+
+        # read through the stats file to find what was the epoch for the last recorded state
+        self.load_training_stats(resume_files["train_stats_file"])
+        self.replay_buffer.load(resume_files["replay_buffer_file"])
+
+        epoch_cnt = len(self.training_stats)
+
+        resume_files["checkpoint_model_file"] = self._make_model_checkpoint_file_path(
+            epoch_cnt
+        )
+        if not os.path.exists(resume_files["checkpoint_model_file"]):
+            raise FileNotFoundError(
+                f"Could not find the file {resume_files['checkpoint_model_file']} for 'checkpoint_model_file'."
+            )
+
+        self.load_models(resume_files["checkpoint_model_file"])
+
+        self.logger.info(
+            f"Loaded previous training status from the following files: {str(resume_files)}"
+        )
 
     def _load_config_settings(self, config={}):
         """
@@ -223,21 +265,12 @@ class AgentDQN:
         self.train_s, info = self.train_env.reset()
         self.env_s, info = self.validation_env.reset()
 
-    def load_training_state(self, load_file_paths):
-        self.load_models(load_file_paths["model_file"])
-        self.policy_model.train()
-        self.target_model.train()
-        self.load_training_stats(load_file_paths["train_stats_file"])
-        self.replay_buffer.load(load_file_paths["replay_buffer_file"])
-
-        self.logger.info(
-            f"Loaded previous training status from the following files: {str(load_file_paths)}"
-        )
-
     def load_models(self, models_load_file):
         checkpoint = torch.load(models_load_file)
         self.policy_model.load_state_dict(checkpoint["policy_model_state_dict"])
+        self.policy_model.train()
         self.target_model.load_state_dict(checkpoint["target_model_state_dict"])
+        self.target_model.train()
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
     def load_training_stats(self, training_stats_file):
@@ -250,14 +283,16 @@ class AgentDQN:
         self.training_stats = checkpoint["training_stats"]
         self.validation_stats = checkpoint["validation_stats"]
 
-    def save_checkpoint(self, model_file, replay_buffer_file, training_stats_file):
+    def save_checkpoint(self):
         self.logger.info(f"Saving checkpoint at t = {self.t} ...")
-        self.save_model(model_file)
-        self.save_training_status(training_stats_file)
-        self.replay_buffer.save(replay_buffer_file)
+        self.save_model()
+        self.save_training_status()
+        self.replay_buffer.save(self.replay_buffer_file)
         self.logger.info(f"Checkpoint saved at t = {self.t}")
 
-    def save_model(self, model_file):
+    def save_model(self):
+        model_file = self._make_model_checkpoint_file_path(len(self.training_stats))
+        Path(os.path.dirname(model_file)).mkdir(parents=True, exist_ok=True)
         torch.save(
             {
                 "policy_model_state_dict": self.policy_model.state_dict(),
@@ -268,7 +303,7 @@ class AgentDQN:
         )
         self.logger.debug(f"Models saved at t = {self.t}")
 
-    def save_training_status(self, training_status_file):
+    def save_training_status(self):
         torch.save(
             {
                 "frame": self.t,
@@ -277,7 +312,7 @@ class AgentDQN:
                 "training_stats": self.training_stats,
                 "validation_stats": self.validation_stats,
             },
-            training_status_file,
+            self.train_stats_file,
         )
         self.logger.debug(f"Training status saved at t = {self.t}")
 
@@ -344,9 +379,7 @@ class AgentDQN:
                 self.validation_stats.append(ep_validation_stats)
 
             if self.save_checkpoints:
-                self.save_checkpoint(
-                    self.model_file, self.replay_buffer_file, self.train_stats_file
-                )
+                self.save_checkpoint()
 
             end_time = datetime.datetime.now()
             epoch_time = end_time - start_time
@@ -354,9 +387,7 @@ class AgentDQN:
             self.logger.info(f"Epoch {epoch} completed in {epoch_time}")
             self.logger.info("\n")
 
-        self.save_checkpoint(
-            self.model_file, self.replay_buffer_file, self.train_stats_file
-        )
+        self.save_checkpoint()
 
         self.logger.info(
             f"Ended training session after {train_epochs} epochs at t = {self.t}"
@@ -522,7 +553,7 @@ class AgentDQN:
 
         is_terminated = False
         while not is_terminated:
-            
+
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
@@ -530,7 +561,6 @@ class AgentDQN:
                 action
             )
             s_prime = torch.tensor(s_prime, device=device).unsqueeze(0).float()
-            
 
             max_qs.append(max_q)
 
@@ -688,50 +718,53 @@ class AgentDQN:
         return loss.item()
 
 
-# TODO: fix this because class was changed
+# TODO: update with the same loging as in the parallelized file
 def classic_experiment():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--game", "-g", type=str, default="freeway")
-    parser.add_argument("--checkpoint_folder", "-c", type=str)
-    parser.add_argument("--save", "-s", action="store_true", default=True)
-    args = parser.parse_args()
+    pass
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--game", "-g", type=str, default="freeway")
+    # parser.add_argument("--checkpoint_folder", "-c", type=str)
+    # parser.add_argument("--save", "-s", action="store_true", default=True)
+    # args = parser.parse_args()
 
-    proj_dir = os.path.dirname(os.path.abspath(__file__))
-    default_checkpoint_folder = os.path.join(proj_dir, "checkpoints", args.game)
+    # proj_dir = os.path.dirname(os.path.abspath(__file__))
+    # default_checkpoint_folder = os.path.join(proj_dir, "checkpoints", args.game)
 
-    if args.checkpoint_folder:
-        checkpoint_folder = args.checkpoint_folder
-    else:
-        checkpoint_folder = default_checkpoint_folder
+    # if args.checkpoint_folder:
+    #     checkpoint_folder = args.checkpoint_folder
+    # else:
+    #     checkpoint_folder = default_checkpoint_folder
 
-    model_file_name = os.path.join(checkpoint_folder, args.game + "_model")
-    replay_buffer_file = os.path.join(checkpoint_folder, args.game + "_replay_buffer")
-    train_stats_file = os.path.join(checkpoint_folder, args.game + "_train_stats")
-    logs_path = os.path.join(checkpoint_folder, "logs")
+    # model_file_name = os.path.join(checkpoint_folder, args.game + "_model")
+    # replay_buffer_file = os.path.join(checkpoint_folder, args.game + "_replay_buffer")
+    # train_stats_file = os.path.join(checkpoint_folder, args.game + "_train_stats")
+    # logs_path = os.path.join(checkpoint_folder, "logs")
 
-    Path(checkpoint_folder).mkdir(parents=True, exist_ok=True)
-    Path(logs_path).mkdir(parents=True, exist_ok=True)
+    # Path(checkpoint_folder).mkdir(parents=True, exist_ok=True)
+    # Path(logs_path).mkdir(parents=True, exist_ok=True)
 
-    train_env = build_environment(game_name=args.game, random_seed=0)
-    validation_env = build_environment(game_name=args.game, random_seed=0)
+    # train_env = build_environment(game_name=args.game, random_seed=0)
+    # validation_env = build_environment(game_name=args.game, random_seed=0)
 
-    train_logger = setup_logger(args.game, logs_path)
+    # train_logger = setup_logger(args.game, logs_path)
 
-    my_agent = AgentDQN(
-        train_env=train_env,
-        validation_env=validation_env,
-        model_file=model_file_name,
-        replay_buffer_file=replay_buffer_file,
-        train_stats_file=train_stats_file,
-        save_checkpoints=args.save,
-        logger=train_logger,
-    )
-    my_agent.train(train_epochs=50)
+    # my_agent = AgentDQN(
+    #     train_env=train_env,
+    #     validation_env=validation_env,
+    #     model_file=model_file_name,
+    #     replay_buffer_file=replay_buffer_file,
+    #     train_stats_file=train_stats_file,
+    #     save_checkpoints=args.save,
+    #     logger=train_logger,
+    # )
+    # my_agent.train(train_epochs=50)
 
-    handlers = my_agent.logger.handlers[:]
-    for handler in handlers:
-        my_agent.logger.removeHandler(handler)
-        handler.close()
+    # handlers = my_agent.logger.handlers[:]
+    # for handler in handlers:
+    #     my_agent.logger.removeHandler(handler)
+    #     handler.close()
+
+    pass
 
 
 def build_environment(game_name, random_seed):
