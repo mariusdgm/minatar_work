@@ -287,8 +287,7 @@ def main():
 
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
 
-    # start_parallel_training_session(runs_configs)
-    start_parallel_training_session(runs_configs)
+    start_parallel_training_session(runs_configs, restart_training_timestamp="2023_04_06-20_51_52")
 
 
     my_logging.cleanup_file_handlers()

@@ -36,7 +36,7 @@ class AgentDQN:
         resume_training_path=None,
         save_checkpoints=True,
         logger=None,
-        config=None,
+        config={},
     ) -> None:
 
         # assign environments
@@ -52,16 +52,17 @@ class AgentDQN:
         )
         self.model_checkpoint_file_basename = "mck"
 
-        self.replay_buffer_file = os.path.join(
-            self.experiment_output_folder, self.experiment_name + "_replay_buffer"
-        )
-        self.train_stats_file = os.path.join(
-            self.experiment_output_folder, self.experiment_name + "_train_stats"
-        )
+        if self.experiment_output_folder and self.experiment_name:
+            self.replay_buffer_file = os.path.join(
+                self.experiment_output_folder, self.experiment_name + "_replay_buffer"
+            )
+            self.train_stats_file = os.path.join(
+                self.experiment_output_folder, self.experiment_name + "_train_stats"
+            )
 
         self.save_checkpoints = save_checkpoints
         self.logger = logger
-
+    
         self._load_config_settings(config)
 
         self._init_models(config)  # init policy, target and optim
@@ -80,10 +81,10 @@ class AgentDQN:
         if resume_training_path:
             self.load_training_state(resume_training_path)
 
-    def _make_model_checkpoint_file_path(self, epoch_cnt=0):
+    def _make_model_checkpoint_file_path(self, experiment_output_folder, epoch_cnt=0):
         """Dynamically build the path where to save the model checkpoint."""
         return os.path.join(
-            self.experiment_output_folder,
+            experiment_output_folder,
             self.model_file_folder,
             f"{self.model_checkpoint_file_basename}_{epoch_cnt}",
         )
@@ -122,6 +123,7 @@ class AgentDQN:
         epoch_cnt = len(self.training_stats)
 
         resume_files["checkpoint_model_file"] = self._make_model_checkpoint_file_path(
+            resume_training_path,
             epoch_cnt
         )
         if not os.path.exists(resume_files["checkpoint_model_file"]):
@@ -291,7 +293,7 @@ class AgentDQN:
         self.logger.info(f"Checkpoint saved at t = {self.t}")
 
     def save_model(self):
-        model_file = self._make_model_checkpoint_file_path(len(self.training_stats))
+        model_file = self._make_model_checkpoint_file_path(self.experiment_output_folder, len(self.training_stats))
         Path(os.path.dirname(model_file)).mkdir(parents=True, exist_ok=True)
         torch.save(
             {
@@ -331,7 +333,7 @@ class AgentDQN:
         if np.random.binomial(1, epsilon) == 1:
             action = torch.tensor([[random.randrange(num_actions)]], device=device)
         else:
-            action, max_q = self.get_max_q_and_action(state)
+            action, max_q = self.get_max_q_and_action(state.unsqueeze(0))
 
         return action, max_q
 
@@ -549,7 +551,7 @@ class AgentDQN:
 
         # Initialize the environment and start state
         s, info = self.validation_env.reset()
-        s = torch.tensor(s, device=device).unsqueeze(0).float()
+        s = torch.tensor(s, device=device).float()
 
         is_terminated = False
         while not is_terminated:
@@ -560,7 +562,7 @@ class AgentDQN:
             s_prime, reward, is_terminated, truncated, info = self.validation_env.step(
                 action
             )
-            s_prime = torch.tensor(s_prime, device=device).unsqueeze(0).float()
+            s_prime = torch.tensor(s_prime, device=device).float()
 
             max_qs.append(max_q)
 
@@ -584,7 +586,7 @@ class AgentDQN:
         self.max_qs = []
 
         self.train_s, info = self.train_env.reset()
-        self.train_s = torch.tensor(self.train_s, device=device).unsqueeze(0).float()
+        self.train_s = torch.tensor(self.train_s, device=device).float()
 
     def train_episode(self, epoch_t, train_frames):
         policy_trained_times = 0
@@ -599,9 +601,7 @@ class AgentDQN:
             s_prime, reward, is_terminated, truncated, info = self.train_env.step(
                 action
             )
-
-            # reward = torch.tensor([[reward]], device=device).float()
-            # is_terminated = torch.tensor([[is_terminated]], device=device)
+            s_prime = torch.tensor(s_prime, device=device).float()
 
             self.replay_buffer.append(
                 self.train_s, action, reward, s_prime, is_terminated
@@ -694,10 +694,10 @@ class AgentDQN:
         states, actions, rewards, next_states, dones = sample
 
         states = torch.stack(states, dim=0)
-        actions = torch.LongTensor(actions)
-        rewards = torch.Tensor(rewards)
+        actions = torch.LongTensor(actions).unsqueeze(1)
+        rewards = torch.Tensor(rewards).unsqueeze(1)
         next_states = torch.stack(next_states, dim=0)
-        dones = torch.Tensor(dones)
+        dones = torch.Tensor(dones).unsqueeze(1)
 
         q_values = self.policy_model(states)
         selected_q_value = q_values.gather(1, actions)

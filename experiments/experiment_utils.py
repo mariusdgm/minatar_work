@@ -68,13 +68,15 @@ def collect_training_output_files(experiments_folder):
             experiment_path, "config"
         )
 
-        model_file_path_list = search_files_containing_string(experiment_path, "model")
+        models_folder_path = os.path.join(experiment_path, "model_checkpoints")
+        model_file_path_list = search_files_containing_string(models_folder_path, "mck")
+        model_file_path_list.sort(key=lambda x: int(x.split("_")[-1]))
+        exp_paths["model_path"] = model_file_path_list[-1]
 
         stats_file_path_list = search_files_containing_string(experiment_path, "train_stats")
 
         exp_paths["training_folder_path"] = experiment_path
         exp_paths["config_path"] = config_file_path_list[0]
-        exp_paths["model_path"] = model_file_path_list[0]
         exp_paths["stats_path"] = stats_file_path_list[0]
         experiment_paths.append(exp_paths)
 

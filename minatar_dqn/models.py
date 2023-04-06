@@ -47,9 +47,8 @@ class Conv_QNET(nn.Module):
         )
 
     def forward(self, x):
-        x = x.float()
         x = self.features(x)
-        x = x.reshape(x.size(0), -1)
+        x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
 
@@ -84,7 +83,7 @@ class Conv_QNET_one(nn.Module):
         )
 
     def forward(self, x):
-        x = x.float()
+        # x = x.float()
         x = self.features(x)
         x = x.reshape(x.size(0), -1)
         x = self.fc(x)
