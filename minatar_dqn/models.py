@@ -1,7 +1,6 @@
 import torch.autograd as autograd
 import torch.nn as nn
 
-# TODO: try with 8, 16, 32, 64 ; linear 32, 64 etc
 class Conv_QNET(nn.Module):
     def __init__(
         self,

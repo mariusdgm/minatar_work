@@ -330,9 +330,6 @@ def plot_pruning_stat(stats, stat_name, title=None, show=False, plot_min_max=Fal
         plt.show()
 
 
-# TODO: also make function for comparison at same pruning value
-
-
 def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
 
     # load baseline
