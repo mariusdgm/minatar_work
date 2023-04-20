@@ -14,6 +14,17 @@ import pandas as pd
 
 
 def load_training_stats(training_stats_file):
+    """Read a training status file and retrieve the training stats.
+
+    Args:
+        training_stats_file (string): A file created during the training of an agent.
+        Contains information needed to resume training at that point.
+
+    Returns:
+        Tuple[dict, dict]: Tuple with the statistics contained in dictionaries. 
+                        The first element is the statistics of the training epochs. 
+                        The second element is the statistics of thestats of the validation epochs. 
+    """
     checkpoint = torch.load(training_stats_file)
 
     training_stats = checkpoint["training_stats"]
@@ -25,6 +36,21 @@ def load_training_stats(training_stats_file):
 def get_df_of_stat(
     stats, stat_name, show_epochs=False, epoch_frames=200_000, experiment=None
 ):
+    """Processes a training stats dictionary into a pd.Dataframe for easier data analysis. 
+
+    Args:
+        stats (dict): dictionary with the epoch statistics
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+                            'episode_frames', 'episode_losses', 'episode_max_qs'.
+        show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
+                                    If 'show_epochs' is True, then the 'index' is transformed to match the epoch number. Defaults to False.
+        epoch_frames (int, optional): How many frames are expected to be in an epoch. Defaults to 200_000.
+        experiment (string, optional): An identifier string to add to the dataframe as a column.
+                                    Used to represent different experiments. Defaults to None.
+
+    Returns:
+        pd.Dataframe: the statistics represented as a dataframe.
+    """
     frame_stamps = []
     stat_records = []
 
@@ -48,6 +74,16 @@ def get_df_of_stat(
 
 
 def get_df_of_stat_pruning(stats, stat_name):
+    """Processes a pruning stats dictionary into a pd.Dataframe for easier data analysis. 
+
+    Args:
+        stats (dict): dictionary with the pruning validation statistics
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+        'episode_frames', 'episode_losses', 'episode_max_qs'
+
+    Returns:
+        _type_: _description_
+    """
     x_idx = []
     stat_records = []
 

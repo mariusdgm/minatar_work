@@ -5,7 +5,17 @@ import logging
 import datetime
 
 def setup_logger(env_name="default_game", folder_path=None, identifier_string=None):
-    ### Setup logging for training ####
+    """
+    Create and return a customized logger.
+
+    Args: 
+        env_name: identifier string to be used in the name of the file (if the log file is created).
+        folder_path: folder where to save the log file. If None, no folder is created.
+        identifier_string: an identifier string that will appear in each logged message.
+
+    Returns:
+        Logger: customized logger instance.
+    """
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
@@ -44,6 +54,12 @@ def setup_logger(env_name="default_game", folder_path=None, identifier_string=No
 
 
 def cleanup_file_handlers(experiment_logger=None):
+    """Cleans up all handlers of experiment_logger logger instance.
+
+    Args:
+        experiment_logger (Logger, optional): If experiment_logger is None, then all loggers will be cleaned up.
+        Defaults to None.
+    """
     # Get all active loggers
     if experiment_logger:
         for handler in experiment_logger.handlers:
