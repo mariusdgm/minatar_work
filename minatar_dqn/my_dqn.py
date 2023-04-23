@@ -42,8 +42,8 @@ class AgentDQN:
 
         Args:
             train_env (gym.env): An instantiated gym Environment
-            validation_env (gym.env): An instantiated gym Environment that was created with the same 
-                                    parameters as train_env. Used to be able to do validation epochs and 
+            validation_env (gym.env): An instantiated gym Environment that was created with the same
+                                    parameters as train_env. Used to be able to do validation epochs and
                                     return to the same training point.
             experiment_output_folder (string, optional): Path to the folder where the training outputs will be saved.
                                                          Defaults to None.
@@ -52,7 +52,7 @@ class AgentDQN:
                                                     session can be found. Defaults to None.
             save_checkpoints (bool, optional): Wether to save the outputs of the training. Defaults to True.
             logger (logger, optional): Necessary Logger instance. Defaults to None.
-            config (dict, optional): Settings of the agent relevant to the models and training. 
+            config (dict, optional): Settings of the agent relevant to the models and training.
                                     If none is provided in the input, the agent will automatically build the default settings.
                                     Defaults to {}.
         """
@@ -80,7 +80,7 @@ class AgentDQN:
 
         self.save_checkpoints = save_checkpoints
         self.logger = logger
-    
+
         self._load_config_settings(config)
 
         self._init_models(config)  # init policy, target and optim
@@ -141,8 +141,7 @@ class AgentDQN:
         epoch_cnt = len(self.training_stats)
 
         resume_files["checkpoint_model_file"] = self._make_model_checkpoint_file_path(
-            resume_training_path,
-            epoch_cnt
+            resume_training_path, epoch_cnt
         )
         if not os.path.exists(resume_files["checkpoint_model_file"]):
             raise FileNotFoundError(
@@ -225,7 +224,6 @@ class AgentDQN:
             end, min(start, start - (start - end) * ((x - eps_decay_start) / decay))
         )
 
-  
     def _init_models(self, config):
         """Instantiate the policy and target networks.
 
@@ -233,7 +231,7 @@ class AgentDQN:
             config (dict): Settings with parameters for the models
 
         Raises:
-            ValueError: The configuration contains an estimator name that the agent does not 
+            ValueError: The configuration contains an estimator name that the agent does not
                         know to instantiate.
         """
         estimator_settings = config.get(
@@ -317,7 +315,9 @@ class AgentDQN:
         self.logger.info(f"Checkpoint saved at t = {self.t}")
 
     def save_model(self):
-        model_file = self._make_model_checkpoint_file_path(self.experiment_output_folder, len(self.training_stats))
+        model_file = self._make_model_checkpoint_file_path(
+            self.experiment_output_folder, len(self.training_stats)
+        )
         Path(os.path.dirname(model_file)).mkdir(parents=True, exist_ok=True)
         torch.save(
             {
@@ -343,6 +343,21 @@ class AgentDQN:
         self.logger.debug(f"Training status saved at t = {self.t}")
 
     def select_action(self, state, t, num_actions, epsilon=None, random_action=False):
+        """Select an action with a greedy epsilon strategy.
+
+        Args:
+            state (torch.Tensor): The current state
+            t (int): the frame number, used in deciding if the selection is done randomly (greedy epsilon)
+            num_actions (int): The number of available actions
+            epsilon (float, optional): What number to use for the epsilon selection. If None, then will be computed as a function of t.
+                                     Defaults to None.
+            random_action (bool, optional): Wether to select a random action without making a prediction through the model.
+                                         Defaults to False.
+
+        Returns:
+            Tuple[int, float]: Returns a tuple. The first element is the selected action (either randomly or by making a model prediction).
+                            The second element is the maximum Q value returned by the model. If the random action was selected, the maximum Q is np.Nan.
+        """
         max_q = np.nan
 
         # A uniform random policy
@@ -383,6 +398,13 @@ class AgentDQN:
             return action, q_val
 
     def train(self, train_epochs):
+        """The main call for the training loop of the DQN Agent.
+
+        Args:
+            train_epochs (int): Represent the number of epochs we want to train for.
+                            Note: if the training is resumed, then the number of training epochs that will be done is
+                            as many as is needed to reach the train_epochs number.
+        """
         if not self.training_stats:
             self.logger.info(f"Starting training session at: {self.t}")
         else:
@@ -420,6 +442,11 @@ class AgentDQN:
         )
 
     def train_epoch(self):
+        """Do a single training epoch.
+
+        Returns:
+            dict: dictionary containing the statistics of the training epoch.
+        """
         self.logger.info(f"Starting training epoch at t = {self.t}")
         epoch_t = 0
         policy_trained_times = 0
@@ -471,148 +498,18 @@ class AgentDQN:
         )
         return epoch_stats
 
-    def compute_training_epoch_stats(
-        self,
-        episode_rewards,
-        episode_nr_frames,
-        policy_trained_times,
-        target_trained_times,
-        ep_losses,
-        ep_max_qs,
-        epoch_time,
-    ):
-        stats = {}
-
-        stats["frame_stamp"] = self.t
-
-        stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
-        stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
-        stats["episode_losses"] = self.get_vector_stats(ep_losses)
-        stats["episode_max_qs"] = self.get_vector_stats(ep_max_qs)
-
-        stats["policy_trained_times"] = policy_trained_times
-        stats["target_trained_times"] = target_trained_times
-        stats["epoch_time"] = epoch_time
-
-        return stats
-
-    def get_vector_stats(self, vector):
-        stats = {}
-
-        if len(vector) > 0:
-            stats["min"] = np.nanmin(vector)
-            stats["max"] = np.nanmax(vector)
-            stats["mean"] = np.nanmean(vector)
-            stats["median"] = np.nanmedian(vector)
-            stats["std"] = np.nanstd(vector)
-
-        else:
-            stats["min"] = None
-            stats["max"] = None
-            stats["mean"] = None
-            stats["median"] = None
-            stats["std"] = None
-
-        return stats
-
-    def validate_epoch(self):
-        self.logger.info(f"Starting validation epoch at t = {self.t}")
-
-        epoch_episode_rewards = []
-        epoch_episode_nr_frames = []
-        epoch_max_qs = []
-        valiation_t = 0
-
-        start_time = datetime.datetime.now()
-
-        while valiation_t < self.validation_step_cnt:
-            (
-                current_episode_reward,
-                ep_frames,
-                ep_max_qs,
-            ) = self.validate_episode()
-
-            valiation_t += ep_frames
-
-            epoch_episode_rewards.append(current_episode_reward)
-            epoch_episode_nr_frames.append(ep_frames)
-            epoch_max_qs.extend(ep_max_qs)
-
-        end_time = datetime.datetime.now()
-        epoch_time = end_time - start_time
-
-        epoch_stats = self.compute_validation_epoch_stats(
-            epoch_episode_rewards,
-            epoch_episode_nr_frames,
-            epoch_max_qs,
-            epoch_time,
-        )
-        return epoch_stats
-
-    def compute_validation_epoch_stats(
-        self,
-        episode_rewards,
-        episode_nr_frames,
-        ep_max_qs,
-        epoch_time,
-    ):
-        stats = {}
-
-        stats["frame_stamp"] = self.t
-
-        stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
-        stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
-        stats["episode_max_qs"] = self.get_vector_stats(ep_max_qs)
-        stats["epoch_time"] = epoch_time
-
-        return stats
-
-    def validate_episode(self):
-
-        current_episode_reward = 0.0
-        ep_frames = 0
-        max_qs = []
-
-        # Initialize the environment and start state
-        s, info = self.validation_env.reset()
-        s = torch.tensor(s, device=device).float()
-
-        is_terminated = False
-        while not is_terminated:
-
-            action, max_q = self.select_action(
-                s, self.t, self.num_actions, epsilon=self.validation_epsilon
-            )
-            s_prime, reward, is_terminated, truncated, info = self.validation_env.step(
-                action
-            )
-            s_prime = torch.tensor(s_prime, device=device).float()
-
-            max_qs.append(max_q)
-
-            current_episode_reward += reward
-
-            ep_frames += 1
-
-            # Continue the process
-            s = s_prime
-
-        return (
-            current_episode_reward,
-            ep_frames,
-            max_qs,
-        )
-
-    def reset_training_episode_tracker(self):
-        self.current_episode_reward = 0.0
-        self.ep_frames = 0
-        self.losses = []
-        self.max_qs = []
-
-        self.train_s, info = self.train_env.reset()
-        self.train_s = torch.tensor(self.train_s, device=device).float()
-
     def train_episode(self, epoch_t, train_frames):
+        """Do a single training episode.
+
+        Args:
+            epoch_t (int): The total number of frames seen in this epoch, relevant for early stopping of
+                            the training episode.
+            train_frames (int): How many frames we want to limit the training epoch to
+
+        Returns:
+            Tuple[bool, int, float, int, int, int, list, list]: Information relevant to this training episode. Some variables are stored in
+                                                            the class so that the training episode can resume in the following epoch.
+        """
         policy_trained_times = 0
         target_trained_times = 0
 
@@ -677,6 +574,16 @@ class AgentDQN:
             self.max_qs,
         )
 
+    def reset_training_episode_tracker(self):
+        """Resets the environment and the variables that keep track of the training episode."""
+        self.current_episode_reward = 0.0
+        self.ep_frames = 0
+        self.losses = []
+        self.max_qs = []
+
+        self.train_s, info = self.train_env.reset()
+        self.train_s = torch.tensor(self.train_s, device=device).float()
+
     def display_training_epoch_info(self, stats):
         self.logger.info(
             "TRAINING STATS"
@@ -696,6 +603,175 @@ class AgentDQN:
             + str(self.epsilon_by_frame(self.t))
             + " | Train epoch time: "
             + str(stats["epoch_time"])
+        )
+
+    def compute_training_epoch_stats(
+        self,
+        episode_rewards,
+        episode_nr_frames,
+        policy_trained_times,
+        target_trained_times,
+        ep_losses,
+        ep_max_qs,
+        epoch_time,
+    ):
+        """Computes the statistics of the current training epoch.
+
+        Args:
+            episode_rewards (list): list contraining the final reward of each episode in the current epoch.
+            episode_nr_frames (list): list contraining the final number of frames of each episode in the current epoch.
+            policy_trained_times (int): Number representing how many times the policy network was updated.
+            target_trained_times (int): Number representing how many times the target network was updated.
+            ep_losses (list): list contraining losses from the current epoch.
+            ep_max_qs (list): list contraining maximum Q values from the current epoch.
+            epoch_time (float): How much time the epoch took to compute in seconds.
+
+        Returns:
+            dict: Dictionary with the relevant statistics
+        """
+        stats = {}
+
+        stats["frame_stamp"] = self.t
+
+        stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
+        stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
+        stats["episode_losses"] = self.get_vector_stats(ep_losses)
+        stats["episode_max_qs"] = self.get_vector_stats(ep_max_qs)
+
+        stats["policy_trained_times"] = policy_trained_times
+        stats["target_trained_times"] = target_trained_times
+        stats["epoch_time"] = epoch_time
+
+        return stats
+
+    def get_vector_stats(self, vector):
+        """Do a single validation epoch.
+
+        Returns:
+            dict: dictionary containing the statistics of the training epoch.
+        """
+        stats = {}
+
+        if len(vector) > 0:
+            stats["min"] = np.nanmin(vector)
+            stats["max"] = np.nanmax(vector)
+            stats["mean"] = np.nanmean(vector)
+            stats["median"] = np.nanmedian(vector)
+            stats["std"] = np.nanstd(vector)
+
+        else:
+            stats["min"] = None
+            stats["max"] = None
+            stats["mean"] = None
+            stats["median"] = None
+            stats["std"] = None
+
+        return stats
+
+    def validate_epoch(self):
+        self.logger.info(f"Starting validation epoch at t = {self.t}")
+
+        epoch_episode_rewards = []
+        epoch_episode_nr_frames = []
+        epoch_max_qs = []
+        valiation_t = 0
+
+        start_time = datetime.datetime.now()
+
+        while valiation_t < self.validation_step_cnt:
+            (
+                current_episode_reward,
+                ep_frames,
+                ep_max_qs,
+            ) = self.validate_episode()
+
+            valiation_t += ep_frames
+
+            epoch_episode_rewards.append(current_episode_reward)
+            epoch_episode_nr_frames.append(ep_frames)
+            epoch_max_qs.extend(ep_max_qs)
+
+        end_time = datetime.datetime.now()
+        epoch_time = end_time - start_time
+
+        epoch_stats = self.compute_validation_epoch_stats(
+            epoch_episode_rewards,
+            epoch_episode_nr_frames,
+            epoch_max_qs,
+            epoch_time,
+        )
+        return epoch_stats
+
+    def compute_validation_epoch_stats(
+        self,
+        episode_rewards,
+        episode_nr_frames,
+        ep_max_qs,
+        epoch_time,
+    ):
+        """Computes the statistics of the current validation epoch.
+
+        Args:
+            episode_rewards (list): list contraining the final reward of each episode in the current epoch.
+            episode_nr_frames (list): list contraining the final number of frames of each episode in the current epoch.
+            ep_max_qs (list): list contraining maximum Q values from the current epoch.
+            epoch_time (float): How much time the epoch took to compute in seconds.
+
+        Returns:
+            dict: Dictionary with the relevant statistics
+        """
+        stats = {}
+
+        stats["frame_stamp"] = self.t
+
+        stats["episode_rewards"] = self.get_vector_stats(episode_rewards)
+        stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
+        stats["episode_max_qs"] = self.get_vector_stats(ep_max_qs)
+        stats["epoch_time"] = epoch_time
+
+        return stats
+
+    def validate_episode(self):
+        """Do a single validation episode.
+
+        Returns:
+            Tuple[int, int, list]: Tuple parameters relevant to the validation episode.
+                                    The first element is the cumulative reward of the episode.
+                                    The second element is the number of frames that were part of the episode.
+                                    The third element is a list of the maximum Q values seen.
+        """
+        current_episode_reward = 0.0
+        ep_frames = 0
+        max_qs = []
+
+        # Initialize the environment and start state
+        s, info = self.validation_env.reset()
+        s = torch.tensor(s, device=device).float()
+
+        is_terminated = False
+        while not is_terminated:
+
+            action, max_q = self.select_action(
+                s, self.t, self.num_actions, epsilon=self.validation_epsilon
+            )
+            s_prime, reward, is_terminated, truncated, info = self.validation_env.step(
+                action
+            )
+            s_prime = torch.tensor(s_prime, device=device).float()
+
+            max_qs.append(max_q)
+
+            current_episode_reward += reward
+
+            ep_frames += 1
+
+            # Continue the process
+            s = s_prime
+
+        return (
+            current_episode_reward,
+            ep_frames,
+            max_qs,
         )
 
     def display_validation_epoch_info(self, stats):
