@@ -38,6 +38,24 @@ class AgentDQN:
         logger=None,
         config={},
     ) -> None:
+        """A DQN agent implementation.
+
+        Args:
+            train_env (gym.env): An instantiated gym Environment
+            validation_env (gym.env): An instantiated gym Environment that was created with the same 
+                                    parameters as train_env. Used to be able to do validation epochs and 
+                                    return to the same training point.
+            experiment_output_folder (string, optional): Path to the folder where the training outputs will be saved.
+                                                         Defaults to None.
+            experiment_name (string, optional): A string describing the experiment being run. Defaults to None.
+            resume_training_path (string, optional): Path to the folder where the outputs of a previous training
+                                                    session can be found. Defaults to None.
+            save_checkpoints (bool, optional): Wether to save the outputs of the training. Defaults to True.
+            logger (logger, optional): Necessary Logger instance. Defaults to None.
+            config (dict, optional): Settings of the agent relevant to the models and training. 
+                                    If none is provided in the input, the agent will automatically build the default settings.
+                                    Defaults to {}.
+        """
 
         # assign environments
         self.train_env = train_env
@@ -94,7 +112,7 @@ class AgentDQN:
         In order to resume training the following files are needed:
         - ReplayBuffer file
         - Training stats file
-        - model weights file (found as the last checkpoint in the models subfolder)
+        - Model weights file (found as the last checkpoint in the models subfolder)
 
         Args:
             load_file_paths: path to where the files needed to resume training can be found
@@ -194,11 +212,11 @@ class AgentDQN:
             start (float): start value of the epsilon function (x=0)
             end (float): end value of the epsilon function (x=decay)
             decay (int): how many steps to reach the end value
-            eps_decay_start: after how many frames to actually start decaying,
-                            uses self.replay_start_size by default
+            eps_decay_start(int, optional): after how many frames to actually start decaying,
+                                            uses self.replay_start_size by default
 
         Returns:
-            function to compute the epsillon based on current frame counter
+            function: function to compute the epsillon based on current frame counter
         """
         if not eps_decay_start:
             eps_decay_start = self.replay_start_size
@@ -207,11 +225,17 @@ class AgentDQN:
             end, min(start, start - (start - end) * ((x - eps_decay_start) / decay))
         )
 
-    def _check_path(self, var_name, path):
-        if path is None:
-            raise ValueError("Provide a path")
-
+  
     def _init_models(self, config):
+        """Instantiate the policy and target networks.
+
+        Args:
+            config (dict): Settings with parameters for the models
+
+        Raises:
+            ValueError: The configuration contains an estimator name that the agent does not 
+                        know to instantiate.
+        """
         estimator_settings = config.get(
             "estimator", {"model": "Conv_QNET", "args_": {}}
         )
