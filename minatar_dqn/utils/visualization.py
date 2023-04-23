@@ -99,7 +99,16 @@ def get_df_of_stat_pruning(stats, stat_name):
 
 
 def plot_stat_log(stats, stat_name, title, show_epochs=False):
-    df = get_df_of_stat(stats, stat_name=stat_name, show_epochs=show_epochs)
+    """Plots the mean, median and max of a specific statistic in subplots.
+
+    Args:
+        stats (dict): dictionary with the epoch statistics
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+                            'episode_frames', 'episode_losses', 'episode_max_qs'.
+        title (string): title to show on plot. Defaults to None.
+        show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
+                                    If 'show_epochs' is True, then the 'index' is transformed to match the epoch number. Defaults to False.
+    """
 
     x_label = "frames"
     if show_epochs:
@@ -108,7 +117,7 @@ def plot_stat_log(stats, stat_name, title, show_epochs=False):
     fig, axs = plt.subplots(nrows=3, ncols=1, sharex=True, figsize=(12, 8))
     fig.suptitle(title)
 
-    sns.lineplot(data=df, x=x_label, y="mean", ax=axs[0])
+    sns.lineplot(data=stats, x=x_label, y="mean", ax=axs[0])
     axs[0].set_ylabel(
         f"{stat_name} mean",
     )
@@ -116,7 +125,7 @@ def plot_stat_log(stats, stat_name, title, show_epochs=False):
         x_label,
     )
 
-    sns.lineplot(data=df, x=x_label, y="median", ax=axs[1])
+    sns.lineplot(data=stats, x=x_label, y="median", ax=axs[1])
     axs[1].set_ylabel(
         f"{stat_name} median",
     )
@@ -124,7 +133,7 @@ def plot_stat_log(stats, stat_name, title, show_epochs=False):
         x_label,
     )
 
-    sns.lineplot(data=df, x=x_label, y="max", ax=axs[2])
+    sns.lineplot(data=stats, x=x_label, y="max", ax=axs[2])
     axs[2].set_ylabel(
         f"{stat_name} max",
     )
@@ -134,6 +143,16 @@ def plot_stat_log(stats, stat_name, title, show_epochs=False):
 
 
 def plot_stat_log_multi(df, stat_name, title, show_epochs=False):
+    """Plot a specific statistic of a training/validation session
+
+    Args:
+        df (pd.Dataframe): pd.Dataframe that contains the statistics per epoch
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+                            'episode_frames', 'episode_losses', 'episode_max_qs'.
+        title (string): title to show on the plot
+        show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
+                                    If 'show_epochs' is True, then the 'index' is transformed to match the epoch number. Defaults to False.
+    """
 
     x_label = "frames"
     if show_epochs:
@@ -182,6 +201,15 @@ def plot_stat_log_multi(df, stat_name, title, show_epochs=False):
 
 
 def subplots_stats(train_log_file_name, stat_name, show_epochs):
+    """Read, preprocess and plot a specific statistic of a training session.
+
+    Args:
+        train_log_file_name (string): Path to the training stats file.
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+                            'episode_frames', 'episode_losses', 'episode_max_qs'.
+        show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
+                                    If 'show_epochs' is True, then the 'index' is transformed to match the epoch number. Defaults to False.
+    """
     df = None
     for log_name in train_log_file_name:
         training_stats, validation_stats = load_training_stats(log_name)
@@ -193,12 +221,11 @@ def subplots_stats(train_log_file_name, stat_name, show_epochs):
             show_epochs=show_epochs,
             experiment=exp_file_name,
         )
+
         if df is None:
             df = df_stats
         else:
             df = pd.concat([df, df_stats], ignore_index=True)
-
-    print(df)
 
     plot_stat_log_multi(
         df,
@@ -209,6 +236,13 @@ def subplots_stats(train_log_file_name, stat_name, show_epochs):
 
 
 def plot_training_info(train_log_file_name, show_epochs=False):
+    """Create plots of multiple statistics for a training session
+
+    Args:
+        train_log_file_name (string): Path to the training stats file.
+        show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
+                                    If 'show_epochs' is True, then the 'index' is transformed to match the epoch number. Defaults to False.
+    """
     if type(train_log_file_name) is list:
         subplots_stats(train_log_file_name, "episode_rewards", show_epochs)
         subplots_stats(train_log_file_name, "episode_frames", show_epochs)
@@ -242,7 +276,18 @@ def plot_training_info(train_log_file_name, show_epochs=False):
 
 
 def load_pruning_experiment_data(pruning_exp_file):
-    """TODO"""
+    """Read the statistics of a pruning experiment
+
+    Args:
+        pruning_exp_file (string): Path to the statistics of the pruning experiment.
+
+    Returns:
+        Tuple[dict, string]: Returns 2 variables. The first one is 
+        a dictionary containing the statistics of a pruning experiment 
+        (similar to the trianing session stats).
+        The second argument is a string describing the pruning experiment.
+    """
+
     checkpoint = torch.load(pruning_exp_file)
     pruning_stats = checkpoint["pruning_validation_results"]
     experiment_info = checkpoint["experiment_info"]
@@ -280,7 +325,16 @@ def get_df_of_pruning_stats(stats, stat_name):
 
 
 def plot_pruning_stat(stats, stat_name, title=None, show=False, plot_min_max=False):
+    """Create the plot for a specific statistic of a pruning session.
 
+    Args:
+        stats (dict): dictionary containing the statistics
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+        'episode_frames', 'episode_losses', 'episode_max_qs'
+        title (string): title to show on plot. Defaults to None.
+        show (bool, optional): Wether to call plt.show inside the function. Defaults to False.
+        plot_min_max (bool, optional): Wether to plot the minimum and maximums on the plot. Defaults to False.
+    """
     df = get_df_of_stat_pruning(stats, stat_name=stat_name)
 
     sns.catplot(x="pruning_factor", y="mean", kind="box", data=df, showfliers=False)
@@ -367,7 +421,12 @@ def plot_pruning_stat(stats, stat_name, title=None, show=False, plot_min_max=Fal
 
 
 def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
+    """Main call for the plotting of a pruning experiment.
 
+    Args:
+        baseline_log_file_name (string): Path to the file with the stats of the baseline validation epoch.
+        pruning_log_file_name (string): Path to the file with the stats of the pruning validation epochs.
+    """
     # load baseline
     baseline_pruning_stats, baseline_exp_info = load_pruning_experiment_data(
         baseline_log_file_name
