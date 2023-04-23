@@ -6,6 +6,8 @@ import numpy as np
 import os
 from pathlib import Path
 import argparse
+from typing import List, Dict
+
 
 import torch.optim as optim
 import torch.nn.functional as F
@@ -45,14 +47,14 @@ class AgentDQN:
             validation_env (gym.env): An instantiated gym Environment that was created with the same
                                     parameters as train_env. Used to be able to do validation epochs and
                                     return to the same training point.
-            experiment_output_folder (string, optional): Path to the folder where the training outputs will be saved.
+            experiment_output_folder (str, optional): Path to the folder where the training outputs will be saved.
                                                          Defaults to None.
-            experiment_name (string, optional): A string describing the experiment being run. Defaults to None.
-            resume_training_path (string, optional): Path to the folder where the outputs of a previous training
+            experiment_name (str, optional): A string describing the experiment being run. Defaults to None.
+            resume_training_path (str, optional): Path to the folder where the outputs of a previous training
                                                     session can be found. Defaults to None.
             save_checkpoints (bool, optional): Wether to save the outputs of the training. Defaults to True.
             logger (logger, optional): Necessary Logger instance. Defaults to None.
-            config (dict, optional): Settings of the agent relevant to the models and training.
+            config (Dict, optional): Settings of the agent relevant to the models and training.
                                     If none is provided in the input, the agent will automatically build the default settings.
                                     Defaults to {}.
         """
@@ -108,15 +110,17 @@ class AgentDQN:
         )
 
     def load_training_state(self, resume_training_path):
-        """
-        In order to resume training the following files are needed:
+        """In order to resume training the following files are needed:
         - ReplayBuffer file
         - Training stats file
         - Model weights file (found as the last checkpoint in the models subfolder)
-
         Args:
-            load_file_paths: path to where the files needed to resume training can be found
+            resume_training_path (str): path to where the files needed to resume training can be found
+
+        Raises:
+            FileNotFoundError: Raised if a required file was not found.
         """
+
         ### build the file paths
         resume_files = {}
 
@@ -201,17 +205,19 @@ class AgentDQN:
 
         self.logger.info("Loaded configuration settings.")
 
-    def _get_exp_decay_function(self, start, end, decay):
+    def _get_exp_decay_function(self, start: float, end: float, decay: float):
         return lambda x: end + (start - end) * np.exp(-1.0 * x / decay)
 
-    def _get_linear_decay_function(self, start, end, decay, eps_decay_start=None):
+    def _get_linear_decay_function(
+        self, start: float, end: float, decay: float, eps_decay_start: float = None
+    ):
         """Return a function that enables getting the value of epsilon at step x.
 
         Args:
             start (float): start value of the epsilon function (x=0)
             end (float): end value of the epsilon function (x=decay)
-            decay (int): how many steps to reach the end value
-            eps_decay_start(int, optional): after how many frames to actually start decaying,
+            decay (float): how many steps to reach the end value
+            eps_decay_start(float, optional): after how many frames to actually start decaying,
                                             uses self.replay_start_size by default
 
         Returns:
@@ -228,7 +234,7 @@ class AgentDQN:
         """Instantiate the policy and target networks.
 
         Args:
-            config (dict): Settings with parameters for the models
+            config (Dict): Settings with parameters for the models
 
         Raises:
             ValueError: The configuration contains an estimator name that the agent does not
@@ -342,7 +348,14 @@ class AgentDQN:
         )
         self.logger.debug(f"Training status saved at t = {self.t}")
 
-    def select_action(self, state, t, num_actions, epsilon=None, random_action=False):
+    def select_action(
+        self,
+        state: torch.Tensor,
+        t: int,
+        num_actions: int,
+        epsilon: float = None,
+        random_action: bool = False,
+    ):
         """Select an action with a greedy epsilon strategy.
 
         Args:
@@ -397,7 +410,7 @@ class AgentDQN:
             action = maxq_and_action[1].view(1, 1)
             return action, q_val
 
-    def train(self, train_epochs):
+    def train(self, train_epochs: int) -> True:
         """The main call for the training loop of the DQN Agent.
 
         Args:
@@ -441,11 +454,13 @@ class AgentDQN:
             f"Ended training session after {train_epochs} epochs at t = {self.t}"
         )
 
-    def train_epoch(self):
+        return True
+
+    def train_epoch(self) -> Dict:
         """Do a single training epoch.
 
         Returns:
-            dict: dictionary containing the statistics of the training epoch.
+            Dict: dictionary containing the statistics of the training epoch.
         """
         self.logger.info(f"Starting training epoch at t = {self.t}")
         epoch_t = 0
@@ -498,7 +513,7 @@ class AgentDQN:
         )
         return epoch_stats
 
-    def train_episode(self, epoch_t, train_frames):
+    def train_episode(self, epoch_t: int, train_frames: int):
         """Do a single training episode.
 
         Args:
@@ -614,20 +629,20 @@ class AgentDQN:
         ep_losses,
         ep_max_qs,
         epoch_time,
-    ):
+    ) -> Dict:
         """Computes the statistics of the current training epoch.
 
         Args:
-            episode_rewards (list): list contraining the final reward of each episode in the current epoch.
-            episode_nr_frames (list): list contraining the final number of frames of each episode in the current epoch.
+            episode_rewards (List): list contraining the final reward of each episode in the current epoch.
+            episode_nr_frames (List): list contraining the final number of frames of each episode in the current epoch.
             policy_trained_times (int): Number representing how many times the policy network was updated.
             target_trained_times (int): Number representing how many times the target network was updated.
-            ep_losses (list): list contraining losses from the current epoch.
-            ep_max_qs (list): list contraining maximum Q values from the current epoch.
+            ep_losses (List): list contraining losses from the current epoch.
+            ep_max_qs (List): list contraining maximum Q values from the current epoch.
             epoch_time (float): How much time the epoch took to compute in seconds.
 
         Returns:
-            dict: Dictionary with the relevant statistics
+            Dict: Dictionary with the relevant statistics
         """
         stats = {}
 
@@ -648,7 +663,7 @@ class AgentDQN:
         """Do a single validation epoch.
 
         Returns:
-            dict: dictionary containing the statistics of the training epoch.
+            Dict: dictionary containing the statistics of the training epoch.
         """
         stats = {}
 
@@ -708,17 +723,17 @@ class AgentDQN:
         episode_nr_frames,
         ep_max_qs,
         epoch_time,
-    ):
+    ) -> Dict:
         """Computes the statistics of the current validation epoch.
 
         Args:
-            episode_rewards (list): list contraining the final reward of each episode in the current epoch.
-            episode_nr_frames (list): list contraining the final number of frames of each episode in the current epoch.
-            ep_max_qs (list): list contraining maximum Q values from the current epoch.
+            episode_rewards (List): list contraining the final reward of each episode in the current epoch.
+            episode_nr_frames (List): list contraining the final number of frames of each episode in the current epoch.
+            ep_max_qs (List): list contraining maximum Q values from the current epoch.
             epoch_time (float): How much time the epoch took to compute in seconds.
 
         Returns:
-            dict: Dictionary with the relevant statistics
+            Dict: Dictionary with the relevant statistics
         """
         stats = {}
 
@@ -735,7 +750,7 @@ class AgentDQN:
         """Do a single validation episode.
 
         Returns:
-            Tuple[int, int, list]: Tuple parameters relevant to the validation episode.
+            Tuple[int, int, List]: Tuple parameters relevant to the validation episode.
                                     The first element is the cumulative reward of the episode.
                                     The second element is the number of frames that were part of the episode.
                                     The third element is a list of the maximum Q values seen.
