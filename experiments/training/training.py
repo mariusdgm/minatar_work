@@ -4,6 +4,7 @@ import itertools
 from pathlib import Path
 import datetime
 import multiprocessing
+from typing import List, Dict
 
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(proj_root)
@@ -16,7 +17,7 @@ from experiments.experiment_utils import seed_everything
 os.environ["OMP_NUM_THREADS"] = "2"
 
 
-def get_config_paths(path_experiments_configs):
+def get_config_paths(path_experiments_configs: str):
     experiment_config_paths = []
     default_config_path = None
     for root, dirs, files in os.walk(path_experiments_configs):
@@ -33,13 +34,22 @@ def get_config_paths(path_experiments_configs):
     return default_config_path, experiment_config_paths
 
 
-def read_config_files(default_config_path, experiment_config_paths):
-    """
-    Reads the contents of the configuration files and merges them
+def read_config_files(default_config_path: str, experiment_config_paths: List[str]) -> List[Dict]:
+    """Reads the contents of the configuration files and merges them
     with the default configuration.
+    
     The settings in the specific experiments overwrite the settings
-    in the default coinfiguration file.
+    in the default coinfiguration file. Usually, the specific experiment configs only change a few 
+    parameters of the default config.
+
+    Args:
+        default_config_path (str): Path of the default configuration for training experiments.
+        experiment_config_paths (List[str]): List that contains the paths to specific experiment config files. 
+
+    Returns:
+        List[Dict]: List of the overwritten experiment configurations.
     """
+
     default_config = None
     if default_config_path:
         with open(default_config_path, "r") as f:
@@ -67,17 +77,18 @@ def read_config_files(default_config_path, experiment_config_paths):
     return experiment_configs
 
 
-def generate_run_configs(experiment_configs, path_experiments_outputs):
-    """
-    Generates the combination of configurations for each environment and seed
-    specified in the training_configs.
+def generate_run_configs(experiment_configs: List[Dict], path_experiments_outputs: str) -> List[Dict]:
+    """Generates the configurations for each combination of environment and seed
+    specified in the training configs.
 
     Args:
-        experiment_configs:
-        path_experiments_outputs:
+        experiment_configs (List): List of dicts that contain the settings of the training experiments.
+        path_experiments_outputs (str): Base path to where the outputs of the training experiments should be saved. 
+
     Returns:
-        List that contains the individual experiments to be run.
+        List[Dict]: A list with the settings for a specific, singular training experiment (experiment settings + environment + seed)
     """
+
     runs_configs = []
     for experiment in experiment_configs:
         combinations = list(
