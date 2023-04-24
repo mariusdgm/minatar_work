@@ -4,7 +4,7 @@ import itertools
 from pathlib import Path
 import datetime
 import multiprocessing
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(proj_root)
@@ -18,6 +18,15 @@ os.environ["OMP_NUM_THREADS"] = "2"
 
 
 def get_config_paths(path_experiments_configs: str):
+    """Return the path to the default configuration and a list of specific experiment configurations.
+
+    Args:
+        path_experiments_configs (str): path where the configs can be found.
+
+    Returns:
+        Tuple[str, List]: The first element is the path to the default configuration file.
+                            The second element is a list with the paths to specific configuration files.
+    """
     experiment_config_paths = []
     default_config_path = None
     for root, dirs, files in os.walk(path_experiments_configs):
@@ -34,17 +43,19 @@ def get_config_paths(path_experiments_configs: str):
     return default_config_path, experiment_config_paths
 
 
-def read_config_files(default_config_path: str, experiment_config_paths: List[str]) -> List[Dict]:
+def read_config_files(
+    default_config_path: str, experiment_config_paths: List[str]
+) -> List[Dict]:
     """Reads the contents of the configuration files and merges them
     with the default configuration.
-    
+
     The settings in the specific experiments overwrite the settings
-    in the default coinfiguration file. Usually, the specific experiment configs only change a few 
+    in the default coinfiguration file. Usually, the specific experiment configs only change a few
     parameters of the default config.
 
     Args:
         default_config_path (str): Path of the default configuration for training experiments.
-        experiment_config_paths (List[str]): List that contains the paths to specific experiment config files. 
+        experiment_config_paths (List[str]): List that contains the paths to specific experiment config files.
 
     Returns:
         List[Dict]: List of the overwritten experiment configurations.
@@ -77,13 +88,15 @@ def read_config_files(default_config_path: str, experiment_config_paths: List[st
     return experiment_configs
 
 
-def generate_run_configs(experiment_configs: List[Dict], path_experiments_outputs: str) -> List[Dict]:
+def generate_run_configs(
+    experiment_configs: List[Dict], path_experiments_outputs: str
+) -> List[Dict]:
     """Generates the configurations for each combination of environment and seed
     specified in the training configs.
 
     Args:
         experiment_configs (List): List of dicts that contain the settings of the training experiments.
-        path_experiments_outputs (str): Base path to where the outputs of the training experiments should be saved. 
+        path_experiments_outputs (str): Base path to where the outputs of the training experiments should be saved.
 
     Returns:
         List[Dict]: A list with the settings for a specific, singular training experiment (experiment settings + environment + seed)
@@ -111,34 +124,36 @@ def generate_run_configs(experiment_configs: List[Dict], path_experiments_output
 
 
 def create_path_to_experiment_folder(
-    config,
-    experiments_output_folder,
-    timestamp_folder=None,
-    previous_run_timestamp=False,
-):
-    """
-    Build the path for the nested experiment structure:
+    config: Dict,
+    experiments_output_folder: str,
+    timestamp_folder: str = None,
+    previous_run_timestamp: bool = False,
+) -> str:
+    """Build the path for the nested experiment structure:
     base_outputs / timestamp / experiment / environment / seed
 
     Args:
-        config: configuration of the experiment
-        experiments_output_folder: root path for the folder where the outputs
-        of paralelized experiments are stored
-        starting_timestamp: timestamp to be used to create the timestamp level folder
-        previous_run_timestamp: Specifies if the 'experiments_output_folder' timestamp
-        is associated with a previous training run 
+        config (Dict): Configuration of the experiment.
+        experiments_output_folder (str): Root path for the folder where the outputs
+                                        of paralelized experiments are stored.
+        timestamp_folder (str, optional): Path to the previous top level output folder. If None, then a new top level folder
+                                        is created with a string matching the current time. Defaults to None.
+        previous_run_timestamp (bool, optional): Specifies if the 'experiments_output_folder' timestamp
+                                                is associated with a previous training run. Defaults to False.
+
+    Raises:
+        ValueError: previous_run_timestamp was true, but no existing file was found at path experiments_output_folder.
 
     Returns:
-        The path to the folder that stores the output for this singular experiment
-
+        str: The path to the folder that stores the output for this singular experiment
     """
-
     experiment = config["experiment_name"]
     env = config["environment"]
     seed = config["seed"]
 
     if previous_run_timestamp:
         # build path and check that it exists
+
         exp_folder_path = os.path.join(
             experiments_output_folder,
             timestamp_folder,
@@ -146,19 +161,19 @@ def create_path_to_experiment_folder(
             env,
             str(seed),
         )
-        if not os.path.exists(experiments_output_folder):
+
+        if not os.path.exists(exp_folder_path):
             raise ValueError(
-                f"Could not find and existing path from a previous training run at: {experiments_output_folder}. \
+                f"Could not find and existing path from a previous training run at: {exp_folder_path}. \
                 Check the value of the timestamp folder again."
             )
 
     else:
         # build path and create the folder
+
         if timestamp_folder is None:
-            timestamp_folder = datetime.datetime.now().strftime(
-                r"%Y_%m_%d-%H_%M_%S"
-            )
-        
+            timestamp_folder = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
+
         exp_folder_path = os.path.join(
             experiments_output_folder,
             timestamp_folder,
@@ -171,7 +186,17 @@ def create_path_to_experiment_folder(
     return exp_folder_path
 
 
-def get_training_file_names(exp_folder_path, experiment_file_string):
+def get_training_file_names(exp_folder_path: str, experiment_file_string: str) -> Dict:
+    """Build the paths to the files that represent the training output using the standard
+    naming convention of the project.
+
+    Args:
+        exp_folder_path (str): Path to the specific experiment.
+        experiment_file_string (str): String used to identify the specific experiment.
+
+    Returns:
+        Dict: dictionary with the 3 files relevant for training: model parameters, replay buffer and training statistics.
+    """
 
     model_file_name = os.path.join(exp_folder_path, experiment_file_string + "_model")
     replay_buffer_file = os.path.join(
@@ -188,7 +213,15 @@ def get_training_file_names(exp_folder_path, experiment_file_string):
     }
 
 
-def run_training_experiment(config):
+def run_training_experiment(config: Dict) -> True:
+    """Start a training experiment using input configuration.
+
+    Args:
+        config (Dict): Configuration to use in the experiment.
+
+    Returns:
+        bool: Returns True on experment end.
+    """
 
     seed_everything(config["seed"])
 
@@ -229,8 +262,10 @@ def run_training_experiment(config):
     path_previous_experiments_outputs = None
     if "restart_training_timestamp" in config:
         path_previous_experiments_outputs = create_path_to_experiment_folder(
-            config, path_experiments_outputs, config["restart_training_timestamp"],
-            previous_run_timestamp = True
+            config,
+            path_experiments_outputs,
+            config["restart_training_timestamp"],
+            previous_run_timestamp=True,
         )
 
     config["experiment_output_folder"] = exp_folder_path
@@ -263,14 +298,24 @@ def run_training_experiment(config):
 
 
 def start_parallel_training_session(
-    configs, restart_training_timestamp=None, processes=8, create_start_timestamp=True
-):
+    configs: List[Dict],
+    restart_training_timestamp: str = None,
+    processes: int = 8,
+    create_start_timestamp: bool = True,
+) -> None:
+    """Function call to start multiple training sessions in parallel.
 
-    if create_start_timestamp:
-        for conf in configs:
-            conf["experiment_start_timestamp"] = datetime.datetime.now().strftime(
-                r"%Y_%m_%d-%H_%M_%S"
-            )
+    Args:
+        configs (Listp[Dict]): list with the configurations to be used in the experiments.
+        restart_training_timestamp (str, optional): Datetime string that represents the folder name of a previous output.
+                                                    Defaults to None.
+        processes (int, optional): How many parallel processes to start. Defaults to 8.
+    """
+
+    # add this parameter to every training config so that we group them in the same training session.
+    current_timestamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
+    for conf in configs:
+        conf["experiment_start_timestamp"] = current_timestamp
 
     if restart_training_timestamp:
         for conf in configs:
@@ -298,8 +343,9 @@ def main():
 
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
 
-    start_parallel_training_session(runs_configs, restart_training_timestamp="2023_04_06-20_51_52")
-
+    start_parallel_training_session(
+        runs_configs, restart_training_timestamp="2023_04_06-20_51_52"
+    )
 
     my_logging.cleanup_file_handlers()
 

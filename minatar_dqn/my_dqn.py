@@ -109,7 +109,7 @@ class AgentDQN:
             f"{self.model_checkpoint_file_basename}_{epoch_cnt}",
         )
 
-    def load_training_state(self, resume_training_path):
+    def load_training_state(self, resume_training_path:str):
         """In order to resume training the following files are needed:
         - ReplayBuffer file
         - Training stats file
