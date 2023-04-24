@@ -6,10 +6,8 @@ import yaml
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(proj_root)
 
-import datetime
-import random
 import multiprocessing
-
+from typing import List, Dict, Tuple
 
 import torch
 import torch.nn.utils.prune as prune
@@ -17,7 +15,6 @@ import torch.nn.utils.prune as prune
 import numpy as np
 
 from pathlib import Path
-import argparse
 
 from minatar_dqn.my_dqn import Conv_QNET, Conv_QNET_one, AgentDQN
 from minatar_dqn.utils import my_logging
@@ -27,7 +24,7 @@ from experiments.experiment_utils import (
     seed_everything,
     search_files_containing_string,
     split_path_at_substring,
-    collect_training_output_files
+    collect_training_output_files,
 )
 
 
@@ -54,13 +51,23 @@ def get_state(s):
 class PruningExperiment(AgentDQN):
     def __init__(
         self,
-        logger,
-        config,
-        model_path,
-        exp_out_file,
-        pruning_function,
-        experiment_info,
+        logger: object,
+        config: dict,
+        model_path: str,
+        exp_out_file: str,
+        pruning_function: function,
+        experiment_info: str,
     ):
+        """_summary_
+
+        Args:
+            logger (object): Customized logging instance.
+            config (dict): Configuration of the training experiment. Used to remake the model architecture.
+            model_path (str): Path to the trained model parameters.
+            exp_out_file (str): Path to the pruning statistics file.
+            pruning_function (function): Function that will be used in the pruning experiment.
+            experiment_info (str): String that describes the pruning experiment.
+        """
         self.logger = logger
         self.config = config
         self.model_path = model_path
@@ -71,10 +78,10 @@ class PruningExperiment(AgentDQN):
         agent_params = config["agent_params"]["args_"]
         self.validation_step_cnt = agent_params["validation_step_cnt"]
         self.validation_epsilon = agent_params["validation_epsilon"]
-        
+
         # other inits needed in AgentDQN function calls
         self.t = 0
-        
+
     def initialize_experiment(self):
 
         seed_everything(self.config["seed"])
@@ -145,13 +152,13 @@ class PruningExperiment(AgentDQN):
             self.exp_out_file,
         )
 
-    def perform_multiple_experiments(self, pruning_values):
+    def perform_multiple_experiments(self, pruning_values: List[float]):
         experiment_results = {}
         for pv in pruning_values:
             self.logger.info(
                 f"Starting pruning experiment with pruning method {self.pruning_function.__name__} using pruning factor {pv}"
             )
-            stats = self.single_experiment(pv)
+            stats = self.pruning_experiment(pv)
             experiment_results[pv] = stats
 
         self.save_experiment_results(experiment_results)
@@ -159,7 +166,7 @@ class PruningExperiment(AgentDQN):
             f"Ended experiment with pruning method {self.pruning_function.__name__}."
         )
 
-    def perform_single_experiment(self, pruning_value):
+    def perform_single_experiment(self, pruning_value: float):
         experiment_results = {}
 
         if self.pruning_function:
@@ -170,7 +177,7 @@ class PruningExperiment(AgentDQN):
             self.logger.info(
                 f"No pruning function defined, running baseline experiment"
             )
-        stats = self.single_experiment(pruning_value)
+        stats = self.pruning_experiment(pruning_value)
         experiment_results[pruning_value] = stats
 
         self.save_experiment_results(experiment_results)
@@ -182,7 +189,7 @@ class PruningExperiment(AgentDQN):
         else:
             self.logger.info(f"Baseline experiment ended")
 
-    def single_experiment(self, pruning_value):
+    def pruning_experiment(self, pruning_value: float):
 
         self.initialize_experiment()
         if pruning_value > 0 and self.pruning_function:
@@ -346,10 +353,7 @@ def run_parallel_pruning_experiment(
         )
 
 
-
-
-
-def run_pruning_experiment(experiment_paths):
+def run_pruning_experiment(experiment_paths: List[Dict]):
 
     model_path = experiment_paths["model_path"]
     config_path = experiment_paths["config_path"]
@@ -388,7 +392,9 @@ def run_pruning_experiment(experiment_paths):
         path_to_pruning_experiment_folder,
     )
 
-    config_to_record = os.path.join(path_to_pruning_experiment_folder, os.path.basename(config_path))
+    config_to_record = os.path.join(
+        path_to_pruning_experiment_folder, os.path.basename(config_path)
+    )
     with open(config_to_record, "w") as file:
         yaml.dump(config, file)
 
@@ -396,8 +402,17 @@ def run_pruning_experiment(experiment_paths):
 
 
 def start_parallel_pruning_session(
-    experiment_paths, training_timestamp_folder, pruning_output_path, processes=8
+    experiment_paths: List[Dict], training_timestamp_folder:str, pruning_output_path:str, processes:int=8
 ):
+    """Perform multiple pruning experiments in parallel.
+
+    Args:
+        experiment_paths (List[Dict]): A list dictionaries that group all the paths to files relevant to a trained model. 
+        training_timestamp_folder (str): The timestamp string representing the top level folder where the outputs of a 
+                                        training session can be found. 
+        pruning_output_path (str): The top level folder where the outputs of the pruning experiment will be saved.
+        processes (int, optional): The number of processes to be started in parallel. Defaults to 8.
+    """
     for exp_paths in experiment_paths:
         exp_paths["pruning_output_base_path"] = pruning_output_path
         exp_paths["training_timestamp_folder"] = training_timestamp_folder
