@@ -434,17 +434,13 @@ def main():
     logger = my_logging.setup_logger()
 
     # Collect all paths to models in a specified folder
-    training_outputs_folder_path = (
-        r"D:\Work\PhD\minatar_work\experiments\training\outputs"
-    )
+    file_dir = os.path.dirname(os.path.abspath(__file__))
+    training_outputs_folder_path = os.path.join(proj_root, "experiments", "training", "outputs")
+    pruning_outputs_folder_path = os.path.join(file_dir, "outputs")
     training_timestamp_folder = "2023_03_19-02_07_18"
 
     experiment_paths = collect_training_output_files(
         os.path.join(training_outputs_folder_path, training_timestamp_folder)
-    )
-
-    pruning_outputs_folder_path = (
-        r"D:\Work\PhD\minatar_work\experiments\pruning\outputs"
     )
 
     start_parallel_pruning_session(
