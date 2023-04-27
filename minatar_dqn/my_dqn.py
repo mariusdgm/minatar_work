@@ -10,6 +10,7 @@ from typing import List, Dict
 
 import torch.optim as optim
 import torch.nn.functional as F
+from tensorboardX import SummaryWriter
 
 import gym
 
@@ -38,6 +39,7 @@ class AgentDQN:
         save_checkpoints=True,
         logger=None,
         config={},
+        enable_tensorboard_logging=True,
     ) -> None:
         """A DQN agent implementation.
 
@@ -51,16 +53,22 @@ class AgentDQN:
             experiment_name (str, optional): A string describing the experiment being run. Defaults to None.
             resume_training_path (str, optional): Path to the folder where the outputs of a previous training
                                                     session can be found. Defaults to None.
-            save_checkpoints (bool, optional): Wether to save the outputs of the training. Defaults to True.
+            save_checkpoints (bool, optional): Whether to save the outputs of the training. Defaults to True.
             logger (logger, optional): Necessary Logger instance. Defaults to None.
             config (Dict, optional): Settings of the agent relevant to the models and training.
                                     If none is provided in the input, the agent will automatically build the default settings.
                                     Defaults to {}.
+            enable_tensorboard_logging (bool, optional): Specifies if logs should also be made using tensorboard.
+                                                        Defaults to True.
         """
 
         # assign environments
         self.train_env = train_env
         self.validation_env = validation_env
+
+        self.save_checkpoints = save_checkpoints
+        self.logger = logger
+        self.tensor_board_writer = None
 
         # set up path names
         self.experiment_output_folder = experiment_output_folder
@@ -78,9 +86,9 @@ class AgentDQN:
             self.train_stats_file = os.path.join(
                 self.experiment_output_folder, self.experiment_name + "_train_stats"
             )
-
-        self.save_checkpoints = save_checkpoints
-        self.logger = logger
+            if enable_tensorboard_logging:
+                tensor_logs_path = os.path.join(experiment_output_folder, "tb_logs")
+                self.tensor_board_writer = SummaryWriter(log_dir=tensor_logs_path)
 
         self._load_config_settings(config)
 
@@ -108,7 +116,7 @@ class AgentDQN:
             f"{self.model_checkpoint_file_basename}_{epoch_cnt}",
         )
 
-    def load_training_state(self, resume_training_path:str):
+    def load_training_state(self, resume_training_path: str):
         """In order to resume training the following files are needed:
         - ReplayBuffer file
         - Training stats file
@@ -334,17 +342,36 @@ class AgentDQN:
         )
         self.logger.debug(f"Models saved at t = {self.t}")
 
+    def _recursive_tensorboard_logging(self, key_prefix, data):
+        for key, value in data.items():
+            if isinstance(value, (int, float)):
+                self.tensor_board_writer.add_scalar(f"{key_prefix}/{key}", value, self.epoch)
+            elif isinstance(value, dict):
+                self._recursive_tensorboard_logging(f"{key_prefix}/{key}", value)
+            elif isinstance(value, list):
+                for idx, item in enumerate(value):
+                    self._recursive_tensorboard_logging(
+                        f"{key_prefix}/{key}/{idx}", item
+                    )
+
     def save_training_status(self):
+
+        status_dict = {
+            "frame": self.t,
+            "episode": self.episodes,
+            "policy_model_update_counter": self.policy_model_update_counter,
+            "training_stats": self.training_stats,
+            "validation_stats": self.validation_stats,
+        }
+
         torch.save(
-            {
-                "frame": self.t,
-                "episode": self.episodes,
-                "policy_model_update_counter": self.policy_model_update_counter,
-                "training_stats": self.training_stats,
-                "validation_stats": self.validation_stats,
-            },
+            status_dict,
             self.train_stats_file,
         )
+
+        if self.tensor_board_writer:
+            self._recursive_tensorboard_logging("", status_dict)
+
         self.logger.debug(f"Training status saved at t = {self.t}")
 
     def select_action(
