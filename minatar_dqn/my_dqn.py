@@ -141,9 +141,10 @@ class AgentDQN:
         # check that the file paths exist
         for file in resume_files:
             if not os.path.exists(resume_files[file]):
-                raise FileNotFoundError(
-                    f"Could not find the file {resume_files[file]} for {file}."
+                self.logger.info(
+                    f"Could not find the file {resume_files[file]} for {file} either because a wrong path was given, or because no training was done for this experiment."
                 )
+                return False
 
         # read through the stats file to find what was the epoch for the last recorded state
         self.load_training_stats(resume_files["train_stats_file"])
@@ -345,11 +346,28 @@ class AgentDQN:
     def _recursive_tensorboard_logging(self, key_prefix, data):
         for key, value in data.items():
             if isinstance(value, (int, float)):
-                self.tensor_board_writer.add_scalar(f"{key_prefix}/{key}", value, self.epoch)
+                log_key = f"{key_prefix}/{key}"
+                if log_key.startswith("/"):
+                    # Strip the first '/' because tensorboard raises a warning otherwise
+                    log_key = log_key.lstrip("/")
+
+                self.tensor_board_writer.add_scalar(log_key, value, self.t)
+
             elif isinstance(value, dict):
-                self._recursive_tensorboard_logging(f"{key_prefix}/{key}", value)
+                log_key = f"{key_prefix}/{key}"
+                if log_key.startswith("/"):
+                    # Strip the first '/' because tensorboard raises a warning otherwise
+                    log_key = log_key.lstrip("/")
+
+                self._recursive_tensorboard_logging(log_key, value)
+
             elif isinstance(value, list):
                 for idx, item in enumerate(value):
+                    log_key = f"{key_prefix}/{key}/{idx}"
+                    if log_key.startswith("/"):
+                        # Strip the first '/' because tensorboard raises a warning otherwise
+                        log_key = log_key.lstrip("/")
+
                     self._recursive_tensorboard_logging(
                         f"{key_prefix}/{key}/{idx}", item
                     )
@@ -371,7 +389,7 @@ class AgentDQN:
 
         if self.tensor_board_writer:
             self._recursive_tensorboard_logging("", status_dict)
-
+           
         self.logger.debug(f"Training status saved at t = {self.t}")
 
     def select_action(
@@ -475,6 +493,8 @@ class AgentDQN:
             self.logger.info("\n")
 
         self.save_checkpoint()
+
+        self.tensor_board_writer.close()
 
         self.logger.info(
             f"Ended training session after {train_epochs} epochs at t = {self.t}"
