@@ -202,33 +202,34 @@ def run_training_experiment(config: Dict) -> True:
         bool: Returns True on experment end.
     """
 
-    seed_everything(config["seed"])
-
-    path_experiments_outputs = config["path_experiments_outputs"]
-    exp_folder_path = create_path_to_experiment_folder(
-        config,
-        path_experiments_outputs,
-        timestamp_folder=config["experiment_start_timestamp"],
-    )
-
-    experiment_file_string = (
-        f'{config["experiment_name"]}_{config["environment"]}_{config["seed"]}'
-    )
-
-    logs_folder = os.path.join(exp_folder_path, "logs")
-    Path(logs_folder).mkdir(parents=True, exist_ok=True)
-
-    env_name = config["environment"]
-    logger = my_logging.setup_logger(
-        env_name=env_name,
-        folder_path=logs_folder,
-        identifier_string=experiment_file_string,
-    )
-    logger.info(
-        f'Starting up experiment: {config["experiment_name"]}, environment: {config["environment"]}, seed: {config["seed"]}'
-    )
-
     try:
+        seed_everything(config["seed"])
+
+        path_experiments_outputs = config["path_experiments_outputs"]
+        exp_folder_path = create_path_to_experiment_folder(
+            config,
+            path_experiments_outputs,
+            timestamp_folder=config["experiment_start_timestamp"],
+        )
+
+        experiment_file_string = (
+            f'{config["experiment_name"]}_{config["environment"]}_{config["seed"]}'
+        )
+
+        logs_folder = os.path.join(exp_folder_path, "logs")
+        Path(logs_folder).mkdir(parents=True, exist_ok=True)
+
+        env_name = config["environment"]
+        logger = my_logging.setup_logger(
+            env_name=env_name,
+            folder_path=logs_folder,
+            identifier_string=experiment_file_string,
+        )
+        logger.info(
+            f'Starting up experiment: {config["experiment_name"]}, environment: {config["environment"]}, seed: {config["seed"]}'
+        )
+
+    
         ### Setup environments ###
         train_env = my_dqn.build_environment(
             game_name=config["environment"], random_seed=config["seed"]
@@ -272,11 +273,11 @@ def run_training_experiment(config: Dict) -> True:
 
         my_logging.cleanup_file_handlers(experiment_logger=logger)
 
-    
-    except Exception as exc:
-        logger.debug(f"Tensorboard logging raised: {exc}")
+        return True
 
-    return True
+    except Exception as exc:
+        return str(exc)
+
 
 
 def start_parallel_training_session(
