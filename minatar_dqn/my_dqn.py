@@ -214,8 +214,7 @@ class AgentDQN:
         )
 
         redo_config = config.get("redo", {})
-        # self.redo = redo_config.get("enabled", False)
-        self.redo = False
+        self.redo = redo_config.get("enabled", False)
 
         self.logger.info("Loaded configuration settings.")
 

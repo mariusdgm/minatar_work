@@ -69,7 +69,7 @@ class ReDo:
         return self.module.running_avg.mean()
 
     @staticmethod
-    def hook(module, inbound, outbound, tau=0.005):
+    def hook(module, inbound, outbound, tau=0.005, beta=0.1):
         assert isinstance(module, nn.ReLU), "ReDo applies on activation layers."
         assert isinstance(inbound, (nn.Linear, nn.Conv2d)), "Inbound type not right."
         assert isinstance(outbound, (nn.Linear, nn.Conv2d)), "Outbound type not right."
@@ -85,11 +85,11 @@ class ReDo:
         module.register_buffer("running_avg_cnt", torch.zeros(1, device=device))
 
         # register hook
-        fn = ReDo(module, inbound, outbound, tau=tau)
+        fn = ReDo(module, inbound, outbound, tau=tau, beta=beta)
         module.register_forward_hook(fn)
         return fn
 
-def apply_redo_parametrization(net, tau=0.005):
+def apply_redo_parametrization(net, tau=0.005, beta=0.1):
     """Assumes the modules are properly ordered."""
     supported_layers = (nn.ReLU, nn.LayerNorm, nn.Linear, nn.Conv2d)
     layers = [(k, v) for k, v in net.named_modules() if isinstance(v, supported_layers)]
@@ -99,7 +99,7 @@ def apply_redo_parametrization(net, tau=0.005):
     for i, (_, module) in enumerate(layers):
         if isinstance(module, nn.ReLU):
             inbound, outbound = layers[i - 1], layers[i + 1]
-            hook = ReDo.hook(module, inbound[1], outbound[1], tau=tau)
+            hook = ReDo.hook(module, inbound[1], outbound[1], tau=tau, beta=beta)
             hndlrs.append(hook)
             ratios.append((module, hook))
             scores.append((module, hook))
