@@ -40,9 +40,10 @@ class ReDo:
         self.inbound.weight.data[idxs] = w[idxs]
         self.inbound.bias.data[idxs] = bias[idxs]
 
-        # TODO: what is the effect of outbound bias
         # set outbound weights to zero
         self.outbound.weight.data[:, idxs] = 0
+        # TODO: what is the effect of outbound bias
+
 
         # reset the running average for reseted neurons
         self.module.running_avg[idxs] = 0
@@ -61,6 +62,7 @@ class ReDo:
         """Return fraction of dormant neurons."""
         score = self.get_score()
         mask = score <= self.tau
+        print(mask.sum(),  mask.nelement(), mask.sum() / mask.nelement())
         return mask.sum() / mask.nelement()
 
     def get_avg_running_avg(self):
@@ -97,7 +99,7 @@ def apply_redo_parametrization(net, tau=0.005):
     for i, (_, module) in enumerate(layers):
         if isinstance(module, nn.ReLU):
             inbound, outbound = layers[i - 1], layers[i + 1]
-            hook = ReDo.hook(module, inbound[1], outbound[1])
+            hook = ReDo.hook(module, inbound[1], outbound[1], tau=tau)
             hndlrs.append(hook)
             ratios.append((module, hook))
             scores.append((module, hook))

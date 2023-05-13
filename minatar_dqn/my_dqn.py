@@ -20,6 +20,8 @@ from minatar_dqn.utils.my_logging import setup_logger
 from minatar_dqn.models import Conv_QNET, Conv_QNET_one
 from minatar_dqn.minatar_gym_wrappers import PermuteMinatarObsSpace
 
+from minatar_dqn.redo import apply_redo_parametrization
+
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
 # maybe: replay buffer (recommendation: keep on cpu, so that the env can run on gpu in parallel for multiple experiments)
@@ -81,10 +83,10 @@ class AgentDQN:
 
         if self.experiment_output_folder and self.experiment_name:
             self.replay_buffer_file = os.path.join(
-                self.experiment_output_folder, self.experiment_name + "_replay_buffer"
+                self.experiment_output_folder, f"{self.experiment_name}_replay_buffer"
             )
             self.train_stats_file = os.path.join(
-                self.experiment_output_folder, self.experiment_name + "_train_stats"
+                self.experiment_output_folder, f"{self.experiment_name}_train_stats"
             )
             if enable_tensorboard_logging:
                 tensor_logs_path = os.path.join(experiment_output_folder, "tb_logs")
@@ -211,6 +213,10 @@ class AgentDQN:
             n_step=buffer_settings.get("n_step", 0),
         )
 
+        redo_config = config.get("redo", {})
+        # self.redo = redo_config.get("enabled", False)
+        self.redo = False
+
         self.logger.info("Loaded configuration settings.")
 
     def _get_exp_decay_function(self, start: float, end: float, decay: float):
@@ -289,6 +295,25 @@ class AgentDQN:
 
         self.logger.info("Initialized newtworks and optimizer.")
 
+        if self.redo:
+            redo_params = config["redo"]
+
+            self.redo_scores = {"policy": [], "target": []}
+
+            tau = redo_params.get("tau", 0.005)
+            beta = redo_params.get("beta", 0.1)
+
+            self.policy_model = apply_redo_parametrization(
+                self.policy_model, tau=tau, beta=beta
+            )
+            self.logger.info("Applied redo parametrization to policy model.")
+
+            self.target_model = apply_redo_parametrization(
+                self.target_model, tau=tau, beta=beta
+            )
+            
+            self.logger.info("Applied redo parametrization to target model.")
+
     def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
         # returns state as [w, h, channels]
@@ -320,6 +345,9 @@ class AgentDQN:
 
         self.training_stats = checkpoint["training_stats"]
         self.validation_stats = checkpoint["validation_stats"]
+
+        if self.redo:
+            self.redo_scores = checkpoint["redo_scores"]
 
     def save_checkpoint(self):
         self.logger.info(f"Saving checkpoint at t = {self.t} ...")
@@ -373,7 +401,6 @@ class AgentDQN:
                     )
 
     def save_training_status(self):
-
         status_dict = {
             "frame": self.t,
             "episode": self.episodes,
@@ -382,6 +409,11 @@ class AgentDQN:
             "validation_stats": self.validation_stats,
         }
 
+        if self.redo:
+            self.redo_scores["policy"].append(self.policy_model.get_dormant_scores())
+            self.redo_scores["target"].append(self.target_model.get_dormant_scores())
+            status_dict["redo_scores"] = self.redo_scores
+
         torch.save(
             status_dict,
             self.train_stats_file,
@@ -389,7 +421,7 @@ class AgentDQN:
 
         if self.tensor_board_writer:
             self._recursive_tensorboard_logging("", status_dict)
-           
+
         self.logger.debug(f"Training status saved at t = {self.t}")
 
     def select_action(
@@ -462,6 +494,8 @@ class AgentDQN:
                             Note: if the training is resumed, then the number of training epochs that will be done is
                             as many as is needed to reach the train_epochs number.
         """
+        self.logger.info(f"Trains stats at start? : {self.training_stats}")
+        
         if not self.training_stats:
             self.logger.info(f"Starting training session at: {self.t}")
         else:

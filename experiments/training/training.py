@@ -265,7 +265,6 @@ def run_training_experiment(config: Dict) -> True:
             config=config,
         )
         experiment_agent.train(train_epochs=config["epochs_to_train"])
-        # experiment_agent.train(1)
 
         logger.info(
             f'Finished training experiment: {config["experiment_name"]}, environment: {config["environment"]}, seed: {config["seed"]}'
@@ -330,7 +329,7 @@ def main():
     # )
 
     start_parallel_training_session(
-        runs_configs, restart_training_timestamp="2023_04_28-01_28_47"
+        runs_configs
     )
 
     my_logging.cleanup_file_handlers()

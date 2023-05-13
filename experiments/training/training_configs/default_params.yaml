@@ -1,7 +1,7 @@
-epochs_to_train: 3
+epochs_to_train: 1
 seeds: [0]
-# environments: [breakout]
-environments: [breakout, seaquest, space_invaders, asterix]
+environments: [breakout]
+# environments: [breakout, seaquest, space_invaders, asterix]
 
 agent_params:
   agent: AgentDQN
@@ -41,3 +41,7 @@ replay_buffer:
   action_dim: 1
   n_step: 0
 
+redo:
+  enabled: True
+  tau: 0.005
+  beta: 0.1
