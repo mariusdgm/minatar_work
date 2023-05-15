@@ -310,7 +310,7 @@ class AgentDQN:
             self.target_model = apply_redo_parametrization(
                 self.target_model, tau=tau, beta=beta
             )
-            
+
             self.logger.info("Applied redo parametrization to target model.")
 
     def _read_and_init_envs(self):
@@ -419,7 +419,11 @@ class AgentDQN:
         )
 
         if self.tensor_board_writer:
-            self._recursive_tensorboard_logging("", status_dict)
+            tb_status_dict = status_dict.copy()
+            for key in ["redo_scores"]:
+                tb_status_dict.pop(key, None)
+        
+            self._recursive_tensorboard_logging("", tb_status_dict)
 
         self.logger.debug(f"Training status saved at t = {self.t}")
 
@@ -493,8 +497,6 @@ class AgentDQN:
                             Note: if the training is resumed, then the number of training epochs that will be done is
                             as many as is needed to reach the train_epochs number.
         """
-        self.logger.info(f"Trains stats at start? : {self.training_stats}")
-        
         if not self.training_stats:
             self.logger.info(f"Starting training session at: {self.t}")
         else:
