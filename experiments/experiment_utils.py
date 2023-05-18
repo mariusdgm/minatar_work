@@ -69,7 +69,7 @@ def collect_training_output_files(experiments_folder):
         )
 
         models_folder_path = os.path.join(experiment_path, "model_checkpoints")
-        model_file_path_list = search_files_containing_string(models_folder_path, "mck")
+        model_file_path_list = search_files_containing_string(models_folder_path, "mck", substring_location="containing")
         model_file_path_list.sort(key=lambda x: int(x.split("_")[-1]))
         exp_paths["model_path"] = model_file_path_list[-1]
 

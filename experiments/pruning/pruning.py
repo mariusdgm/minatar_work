@@ -7,7 +7,7 @@ proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 sys.path.append(proj_root)
 
 import multiprocessing
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Callable
 
 import torch
 import torch.nn.utils.prune as prune
@@ -55,7 +55,7 @@ class PruningExperiment(AgentDQN):
         config: dict,
         model_path: str,
         exp_out_file: str,
-        pruning_function: function,
+        pruning_function: Callable,
         experiment_info: str,
     ):
         """_summary_
@@ -65,7 +65,7 @@ class PruningExperiment(AgentDQN):
             config (dict): Configuration of the training experiment. Used to remake the model architecture.
             model_path (str): Path to the trained model parameters.
             exp_out_file (str): Path to the pruning statistics file.
-            pruning_function (function): Function that will be used in the pruning experiment.
+            pruning_function (Callable): Function that will be used in the pruning experiment.
             experiment_info (str): String that describes the pruning experiment.
         """
         self.logger = logger
@@ -437,7 +437,7 @@ def main():
     file_dir = os.path.dirname(os.path.abspath(__file__))
     training_outputs_folder_path = os.path.join(proj_root, "experiments", "training", "outputs")
     pruning_outputs_folder_path = os.path.join(file_dir, "outputs")
-    training_timestamp_folder = "2023_03_19-02_07_18"
+    training_timestamp_folder = "2023_05_15-18_23_40"
 
     experiment_paths = collect_training_output_files(
         os.path.join(training_outputs_folder_path, training_timestamp_folder)

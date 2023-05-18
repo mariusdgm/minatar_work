@@ -1,5 +1,5 @@
 epochs_to_train: 20
-seeds: [3]
+seeds: [0]
 environments: [breakout]
 # environments: [breakout, seaquest, space_invaders, asterix]
 
