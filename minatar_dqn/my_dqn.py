@@ -527,8 +527,6 @@ class AgentDQN:
             self.logger.info(f"Epoch {epoch} completed in {epoch_time}")
             self.logger.info("\n")
 
-        # self.save_checkpoint()
-
         self.tensor_board_writer.close()
 
         self.logger.info(
