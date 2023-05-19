@@ -7,7 +7,7 @@ import torch.nn as nn
 __all__ = ["ReDo", "apply_redo_parametrization"]
 
 class ReDo:
-    def __init__(self, module, inbound, outbound, tau=0.005, beta=0.1) -> None:
+    def __init__(self, module, inbound, outbound, tau=0.005, beta=0.1, verbose=False) -> None:
         self.module = module
         self.inbound = inbound
         self.outbound = outbound
@@ -62,7 +62,6 @@ class ReDo:
         """Return fraction of dormant neurons."""
         score = self.get_score()
         mask = score <= self.tau
-        print(mask.sum(),  mask.nelement(), mask.sum() / mask.nelement())
         return mask.sum() / mask.nelement()
 
     def get_avg_running_avg(self):
@@ -89,7 +88,7 @@ class ReDo:
         module.register_forward_hook(fn)
         return fn
 
-def apply_redo_parametrization(net, tau=0.005, beta=0.1):
+def apply_redo_parametrization(net, tau=0.005, beta=0.1, verbose=False):
     """Assumes the modules are properly ordered."""
     supported_layers = (nn.ReLU, nn.LayerNorm, nn.Linear, nn.Conv2d)
     layers = [(k, v) for k, v in net.named_modules() if isinstance(v, supported_layers)]
@@ -103,7 +102,8 @@ def apply_redo_parametrization(net, tau=0.005, beta=0.1):
             hndlrs.append(hook)
             ratios.append((module, hook))
             scores.append((module, hook))
-            print(f"Hooking {inbound[1]} -> {outbound[1]}")
+            if verbose:
+                print(f"Hooking {inbound[1]} -> {outbound[1]}")
 
     # monkey-patch the estimator **instance** by bounding the method below it. 
     # This way we can access the handlers.
