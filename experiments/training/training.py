@@ -249,7 +249,7 @@ def run_training_experiment(config: Dict) -> True:
             )
 
         config["experiment_output_folder"] = exp_folder_path
-        config["experiment_name"] = experiment_file_string
+        config["full_experiment_name"] = experiment_file_string
 
         config_to_record = os.path.join(exp_folder_path, f"{experiment_file_string}_config")
         with open(config_to_record, "w") as file:
