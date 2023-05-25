@@ -44,7 +44,6 @@ class ReDo:
         self.outbound.weight.data[:, idxs] = 0
         # TODO: what is the effect of outbound bias
 
-
         # reset the running average for reseted neurons
         self.module.running_avg[idxs] = 0
 
