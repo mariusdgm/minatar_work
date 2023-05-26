@@ -1,3 +1,5 @@
 checkpoints/
 experiments/training/outputs
 experiments/pruning/outputs
+experiments/pruning/imgs
+
