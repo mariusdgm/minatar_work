@@ -17,6 +17,7 @@ import gym
 from minatar_dqn.replay_buffer import ReplayBuffer
 from experiments.experiment_utils import seed_everything
 from minatar_dqn.utils.my_logging import setup_logger
+from minatar_dqn.utils.generic import merge_dictionaries
 from minatar_dqn.models import Conv_QNET, Conv_QNET_one
 from minatar_dqn.minatar_gym_wrappers import PermuteMinatarObsSpace
 
@@ -551,6 +552,8 @@ class AgentDQN:
         epoch_losses = []
         epoch_max_qs = []
 
+        epoch_reward_contor = {}
+
         start_time = datetime.datetime.now()
         while epoch_t < self.train_step_cnt:
             (
@@ -562,6 +565,7 @@ class AgentDQN:
                 ep_target_trained_times,
                 ep_losses,
                 ep_max_qs,
+                ep_reward_contor
             ) = self.train_episode(epoch_t, self.train_step_cnt)
 
             policy_trained_times += ep_policy_trained_times
@@ -574,6 +578,8 @@ class AgentDQN:
                 epoch_episode_nr_frames.append(ep_frames)
                 epoch_losses.extend(ep_losses)
                 epoch_max_qs.extend(ep_max_qs)
+
+                epoch_reward_contor = merge_dictionaries(epoch_reward_contor, self.ep_reward_contor)
 
                 self.episodes += 1
                 self.reset_training_episode_tracker()
@@ -589,6 +595,7 @@ class AgentDQN:
             epoch_losses,
             epoch_max_qs,
             epoch_time,
+            epoch_reward_contor
         )
         return epoch_stats
 
@@ -617,6 +624,11 @@ class AgentDQN:
                 action
             )
             s_prime = torch.tensor(s_prime, device=device).float()
+
+            if reward in self.ep_reward_contor:
+                self.ep_reward_contor[reward] += 1
+            else:
+                self.ep_reward_contor[reward] = 1
 
             self.replay_buffer.append(
                 self.train_s, action, reward, s_prime, is_terminated
@@ -666,6 +678,7 @@ class AgentDQN:
             target_trained_times,
             self.losses,
             self.max_qs,
+            self.ep_reward_contor
         )
 
     def reset_training_episode_tracker(self):
@@ -674,6 +687,7 @@ class AgentDQN:
         self.ep_frames = 0
         self.losses = []
         self.max_qs = []
+        self.ep_reward_contor = {}
 
         self.train_s, info = self.train_env.reset()
         self.train_s = torch.tensor(self.train_s, device=device).float()
@@ -708,6 +722,7 @@ class AgentDQN:
         ep_losses,
         ep_max_qs,
         epoch_time,
+        epoch_reward_contor
     ) -> Dict:
         """Computes the statistics of the current training epoch.
 
@@ -719,6 +734,7 @@ class AgentDQN:
             ep_losses (List): list contraining losses from the current epoch.
             ep_max_qs (List): list contraining maximum Q values from the current epoch.
             epoch_time (float): How much time the epoch took to compute in seconds.
+            epoch_reward_contor (Dict): dictionary containing the number of times each reward was seen in the current epoch.
 
         Returns:
             Dict: Dictionary with the relevant statistics
@@ -735,6 +751,7 @@ class AgentDQN:
         stats["policy_trained_times"] = policy_trained_times
         stats["target_trained_times"] = target_trained_times
         stats["epoch_time"] = epoch_time
+        stats["reward_contor"] = epoch_reward_contor
 
         return stats
 
@@ -770,6 +787,8 @@ class AgentDQN:
         epoch_max_qs = []
         valiation_t = 0
 
+        epoch_reward_contor = {}
+
         start_time = datetime.datetime.now()
 
         while valiation_t < self.validation_step_cnt:
@@ -777,6 +796,7 @@ class AgentDQN:
                 current_episode_reward,
                 ep_frames,
                 ep_max_qs,
+                ep_reward_contor
             ) = self.validate_episode()
 
             valiation_t += ep_frames
@@ -784,6 +804,8 @@ class AgentDQN:
             epoch_episode_rewards.append(current_episode_reward)
             epoch_episode_nr_frames.append(ep_frames)
             epoch_max_qs.extend(ep_max_qs)
+
+            epoch_reward_contor = merge_dictionaries(epoch_reward_contor, ep_reward_contor)
 
         end_time = datetime.datetime.now()
         epoch_time = end_time - start_time
@@ -793,6 +815,7 @@ class AgentDQN:
             epoch_episode_nr_frames,
             epoch_max_qs,
             epoch_time,
+            epoch_reward_contor
         )
         return epoch_stats
 
@@ -802,6 +825,7 @@ class AgentDQN:
         episode_nr_frames,
         ep_max_qs,
         epoch_time,
+        epoch_reward_contor
     ) -> Dict:
         """Computes the statistics of the current validation epoch.
 
@@ -810,6 +834,7 @@ class AgentDQN:
             episode_nr_frames (List): list contraining the final number of frames of each episode in the current epoch.
             ep_max_qs (List): list contraining maximum Q values from the current epoch.
             epoch_time (float): How much time the epoch took to compute in seconds.
+            epoch_reward_contor (Dict): dictionary containing the number of times each reward was seen in the current epoch.
 
         Returns:
             Dict: Dictionary with the relevant statistics
@@ -822,6 +847,7 @@ class AgentDQN:
         stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
         stats["episode_max_qs"] = self.get_vector_stats(ep_max_qs)
         stats["epoch_time"] = epoch_time
+        stats["reward_contor"] = epoch_reward_contor
 
         return stats
 
@@ -829,14 +855,16 @@ class AgentDQN:
         """Do a single validation episode.
 
         Returns:
-            Tuple[int, int, List]: Tuple parameters relevant to the validation episode.
+            Tuple[int, int, List, Dict]: Tuple parameters relevant to the validation episode.
                                     The first element is the cumulative reward of the episode.
                                     The second element is the number of frames that were part of the episode.
                                     The third element is a list of the maximum Q values seen.
+                                    The fourth element is a dictionary containing the number of times each reward was seen.
         """
         current_episode_reward = 0.0
         ep_frames = 0
         max_qs = []
+        ep_reward_contor = {}
 
         # Initialize the environment and start state
         s, info = self.validation_env.reset()
@@ -853,6 +881,11 @@ class AgentDQN:
             )
             s_prime = torch.tensor(s_prime, device=device).float()
 
+            if reward in ep_reward_contor:
+                ep_reward_contor[reward] += 1
+            else:
+                ep_reward_contor[reward] = 1
+
             max_qs.append(max_q)
 
             current_episode_reward += reward
@@ -866,6 +899,7 @@ class AgentDQN:
             current_episode_reward,
             ep_frames,
             max_qs,
+            ep_reward_contor
         )
 
     def display_validation_epoch_info(self, stats):

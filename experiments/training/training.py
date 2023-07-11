@@ -320,14 +320,10 @@ def main():
     default_config_path, experiment_config_paths = get_config_paths(
         path_experiments_configs
     )
-
+  
     experiment_configs = read_config_files(default_config_path, experiment_config_paths)
 
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
-
-    # start_parallel_training_session(
-    #     runs_configs
-    # )
 
     start_parallel_training_session(
         runs_configs
