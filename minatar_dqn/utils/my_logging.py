@@ -16,8 +16,9 @@ def setup_logger(env_name="default_game", folder_path=None, identifier_string=No
     Returns:
         Logger: customized logger instance.
     """
+    level = logging.DEBUG
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger.setLevel(level)
 
     if identifier_string is None:
         formatter = logging.Formatter(
@@ -36,7 +37,7 @@ def setup_logger(env_name="default_game", folder_path=None, identifier_string=No
     # If no handler exists, add one that writes to sys.stdout
     if not stdout_handler_exists:
         console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(level)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
@@ -46,7 +47,7 @@ def setup_logger(env_name="default_game", folder_path=None, identifier_string=No
         log_file_name = f"{env_name}_{time_stamp}"
         log_file_path = os.path.join(folder_path, log_file_name)
         file_handler = logging.FileHandler(log_file_path)
-        file_handler.setLevel(logging.INFO)
+        file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 

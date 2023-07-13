@@ -30,6 +30,20 @@ from minatar_dqn.redo import apply_redo_parametrization
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 
+class RewardPerception():
+    def __init__(self, mapping):
+        self.mapping = mapping
+
+    def percieve_reward(self, reward):
+        if reward in self.mapping:
+            return self.mapping[reward]
+        elif isinstance(reward, float):
+            int_value = int(reward)
+            if int_value in self.mapping:
+                return self.mapping[int_value]
+        else:
+            return reward
+
 
 class AgentDQN:
     def __init__(
@@ -217,6 +231,17 @@ class AgentDQN:
         redo_config = config.get("redo", {})
         self.redo = redo_config.get("enabled", False)
 
+        self.reward_perception = None
+        reward_perception_config = config.get("reward_perception", None)
+        
+        if reward_perception_config:
+            reward_perception_mapping = reward_perception_config.get("mapping", None)
+            if reward_perception_mapping:
+                self.logger.info("Setup reward mapping.")
+                self.reward_perception = RewardPerception(
+                    reward_perception_mapping
+                )
+            
         self.logger.info("Loaded configuration settings.")
 
     def _get_exp_decay_function(self, start: float, end: float, decay: float):
@@ -630,8 +655,13 @@ class AgentDQN:
             else:
                 self.ep_reward_contor[reward] = 1
 
+            if self.reward_perception:
+                percieved_reward = self.reward_perception.percieve_reward(reward)
+            else:
+                percieved_reward = reward
+
             self.replay_buffer.append(
-                self.train_s, action, reward, s_prime, is_terminated
+                self.train_s, action, percieved_reward, s_prime, is_terminated
             )
 
             self.max_qs.append(max_q)

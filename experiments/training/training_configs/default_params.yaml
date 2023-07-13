@@ -1,4 +1,4 @@
-epochs_to_train: 5
+epochs_to_train: 25
 seeds: [0, 1, 2]
 # environments: [breakout]
 environments: [breakout, space_invaders, asterix]
@@ -45,3 +45,5 @@ redo:
   enabled: True
   tau: 0.005
   beta: 0.1
+
+reward_perception: null

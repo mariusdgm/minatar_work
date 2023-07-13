@@ -1,0 +1,11 @@
+experiment_name: conv64_lin256_pessim
+
+estimator:
+  model: Conv_QNET
+  args_:
+    conv_hidden_out_size: 64
+    lin_hidden_out_size: 256
+
+reward_perception:
+  mapping:
+    0: -0.01

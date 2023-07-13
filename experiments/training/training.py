@@ -229,7 +229,6 @@ def run_training_experiment(config: Dict) -> True:
             f'Starting up experiment: {config["experiment_name"]}, environment: {config["environment"]}, seed: {config["seed"]}'
         )
 
-    
         ### Setup environments ###
         train_env = my_dqn.build_environment(
             game_name=config["environment"], random_seed=config["seed"]
@@ -254,7 +253,7 @@ def run_training_experiment(config: Dict) -> True:
         config_to_record = os.path.join(exp_folder_path, f"{experiment_file_string}_config")
         with open(config_to_record, "w") as file:
             yaml.dump(config, file)
-
+        
         experiment_agent = my_dqn.AgentDQN(
             train_env=train_env,
             validation_env=validation_env,
@@ -265,6 +264,7 @@ def run_training_experiment(config: Dict) -> True:
             logger=logger,
             config=config,
         )
+
         experiment_agent.train(train_epochs=config["epochs_to_train"])
 
         logger.info(
@@ -288,7 +288,7 @@ def start_parallel_training_session(
     """Function call to start multiple training sessions in parallel.
 
     Args:
-        configs (Listp[Dict]): list with the configurations to be used in the experiments.
+        configs (List[Dict]): list with the configurations to be used in the experiments.
         restart_training_timestamp (str, optional): Datetime string that represents the folder name of a previous output.
                                                     Defaults to None.
         processes (int, optional): How many parallel processes to start. Defaults to 8.
@@ -308,6 +308,28 @@ def start_parallel_training_session(
 
     print(f"Parallel job run statuses: {statuses}")
 
+def start_single_training_session(
+    config: Dict,
+    restart_training_timestamp: str = None,
+) -> None:
+    """Function call to start multiple training sessions in parallel.
+
+    Args:
+        configs (Dict): list with the configurations to be used in the experiments.
+        restart_training_timestamp (str, optional): Datetime string that represents the folder name of a previous output.
+                                                    Defaults to None.
+        processes (int, optional): How many parallel processes to start. Defaults to 8.
+    """
+    
+    # add this parameter to every training config so that we group them in the same training session.
+    current_timestamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
+    config["experiment_start_timestamp"] = current_timestamp
+
+    if restart_training_timestamp:
+        config["restart_training_timestamp"] = restart_training_timestamp
+
+    run_training_experiment(config)
+
 
 def main():
 
@@ -325,9 +347,11 @@ def main():
 
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
 
-    start_parallel_training_session(
-        runs_configs
-    )
+    # start_parallel_training_session(
+    #     runs_configs
+    # )
+
+    start_single_training_session(runs_configs[4])
 
     my_logging.cleanup_file_handlers()
 
