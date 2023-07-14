@@ -347,11 +347,11 @@ def main():
 
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
 
-    # start_parallel_training_session(
-    #     runs_configs
-    # )
+    start_parallel_training_session(
+        runs_configs
+    )
 
-    start_single_training_session(runs_configs[4])
+    # start_single_training_session(runs_configs[4])
 
     my_logging.cleanup_file_handlers()
 
