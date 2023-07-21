@@ -657,6 +657,8 @@ class AgentDQN:
 
             if self.reward_perception:
                 percieved_reward = self.reward_perception.percieve_reward(reward)
+                if is_terminated:
+                    percieved_reward = percieved_reward / (1 - self.gamma)
             else:
                 percieved_reward = reward
 
@@ -967,7 +969,8 @@ class AgentDQN:
         if self.loss_function == "mse_loss":
             loss = F.mse_loss(selected_q_value, expected_q_value)
 
-        # loss = F.smooth_l1_loss(q_value, expected_q_value)
+        # if self.loss_function == "smooth_l1":
+        #     loss = F.smooth_l1_loss(selected_q_value, expected_q_value)
 
         self.optimizer.zero_grad()
         loss.backward()

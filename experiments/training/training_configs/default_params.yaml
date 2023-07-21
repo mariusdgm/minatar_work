@@ -1,7 +1,7 @@
-epochs_to_train: 25
-seeds: [0, 1, 2]
-# environments: [breakout]
-environments: [breakout, space_invaders, asterix]
+epochs_to_train: 20
+seeds: [0, 1]
+environments: [breakout, space_invaders]
+# environments: [breakout, space_invaders, asterix]
 
 agent_params:
   agent: AgentDQN

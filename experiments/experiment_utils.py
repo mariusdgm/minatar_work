@@ -49,7 +49,7 @@ def split_path_at_substring(path, substring):
         right = path
     return left, right
 
-def collect_training_output_files(experiments_folder):
+def collect_training_output_files(experiments_folder, append_none=False):
 
     # find the configurations, each training experiment has one
     config_file_path_list = search_files_containing_string(
@@ -70,6 +70,12 @@ def collect_training_output_files(experiments_folder):
 
         models_folder_path = os.path.join(experiment_path, "model_checkpoints")
         model_file_path_list = search_files_containing_string(models_folder_path, "mck", substring_location="containing")
+
+        if len(model_file_path_list) == 0:
+            if append_none:
+                experiment_paths.append(None)
+            continue
+
         model_file_path_list.sort(key=lambda x: int(x.split("_")[-1]))
         exp_paths["model_path"] = model_file_path_list[-1]
 
