@@ -34,7 +34,7 @@ class RewardPerception():
     def __init__(self, mapping):
         self.mapping = mapping
 
-    def percieve_reward(self, reward):
+    def perceive_reward(self, reward):
         if reward in self.mapping:
             return self.mapping[reward]
         elif isinstance(reward, float):
@@ -656,14 +656,14 @@ class AgentDQN:
                 self.ep_reward_contor[reward] = 1
 
             if self.reward_perception:
-                percieved_reward = self.reward_perception.percieve_reward(reward)
+                perceived_reward = self.reward_perception.perceive_reward(reward)
                 if is_terminated:
-                    percieved_reward = percieved_reward / (1 - self.gamma)
+                    perceived_reward = perceived_reward / (1 - self.gamma)
             else:
-                percieved_reward = reward
+                perceived_reward = reward
 
             self.replay_buffer.append(
-                self.train_s, action, percieved_reward, s_prime, is_terminated
+                self.train_s, action, perceived_reward, s_prime, is_terminated
             )
 
             self.max_qs.append(max_q)
