@@ -30,20 +30,6 @@ from minatar_dqn.redo import apply_redo_parametrization
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = "cpu"
 
-class RewardPerception():
-    def __init__(self, mapping):
-        self.mapping = mapping
-
-    def perceive_reward(self, reward):
-        if reward in self.mapping:
-            return self.mapping[reward]
-        elif isinstance(reward, float):
-            int_value = int(reward)
-            if int_value in self.mapping:
-                return self.mapping[int_value]
-        else:
-            return reward
-
 
 class AgentDQN:
     def __init__(
@@ -233,15 +219,13 @@ class AgentDQN:
 
         self.reward_perception = None
         reward_perception_config = config.get("reward_perception", None)
-        
+
         if reward_perception_config:
-            reward_perception_mapping = reward_perception_config.get("mapping", None)
+            reward_perception_mapping = reward_perception_config.get("parameters", None)
             if reward_perception_mapping:
                 self.logger.info("Setup reward mapping.")
-                self.reward_perception = RewardPerception(
-                    reward_perception_mapping
-                )
-            
+                self.reward_perception = reward_perception_mapping
+
         self.logger.info("Loaded configuration settings.")
 
     def _get_exp_decay_function(self, start: float, end: float, decay: float):
@@ -448,7 +432,7 @@ class AgentDQN:
             tb_status_dict = status_dict.copy()
             for key in ["redo_scores"]:
                 tb_status_dict.pop(key, None)
-        
+
             self._recursive_tensorboard_logging("", tb_status_dict)
 
         self.logger.debug(f"Training status saved at t = {self.t}")
@@ -590,7 +574,7 @@ class AgentDQN:
                 ep_target_trained_times,
                 ep_losses,
                 ep_max_qs,
-                ep_reward_contor
+                ep_reward_contor,
             ) = self.train_episode(epoch_t, self.train_step_cnt)
 
             policy_trained_times += ep_policy_trained_times
@@ -604,7 +588,9 @@ class AgentDQN:
                 epoch_losses.extend(ep_losses)
                 epoch_max_qs.extend(ep_max_qs)
 
-                epoch_reward_contor = merge_dictionaries(epoch_reward_contor, self.ep_reward_contor)
+                epoch_reward_contor = merge_dictionaries(
+                    epoch_reward_contor, self.ep_reward_contor
+                )
 
                 self.episodes += 1
                 self.reset_training_episode_tracker()
@@ -620,7 +606,7 @@ class AgentDQN:
             epoch_losses,
             epoch_max_qs,
             epoch_time,
-            epoch_reward_contor
+            epoch_reward_contor,
         )
         return epoch_stats
 
@@ -655,15 +641,8 @@ class AgentDQN:
             else:
                 self.ep_reward_contor[reward] = 1
 
-            if self.reward_perception:
-                perceived_reward = self.reward_perception.perceive_reward(reward)
-                if is_terminated:
-                    perceived_reward = perceived_reward / (1 - self.gamma)
-            else:
-                perceived_reward = reward
-
             self.replay_buffer.append(
-                self.train_s, action, perceived_reward, s_prime, is_terminated
+                self.train_s, action, reward, s_prime, is_terminated
             )
 
             self.max_qs.append(max_q)
@@ -710,7 +689,7 @@ class AgentDQN:
             target_trained_times,
             self.losses,
             self.max_qs,
-            self.ep_reward_contor
+            self.ep_reward_contor,
         )
 
     def reset_training_episode_tracker(self):
@@ -754,7 +733,7 @@ class AgentDQN:
         ep_losses,
         ep_max_qs,
         epoch_time,
-        epoch_reward_contor
+        epoch_reward_contor,
     ) -> Dict:
         """Computes the statistics of the current training epoch.
 
@@ -828,7 +807,7 @@ class AgentDQN:
                 current_episode_reward,
                 ep_frames,
                 ep_max_qs,
-                ep_reward_contor
+                ep_reward_contor,
             ) = self.validate_episode()
 
             valiation_t += ep_frames
@@ -837,7 +816,9 @@ class AgentDQN:
             epoch_episode_nr_frames.append(ep_frames)
             epoch_max_qs.extend(ep_max_qs)
 
-            epoch_reward_contor = merge_dictionaries(epoch_reward_contor, ep_reward_contor)
+            epoch_reward_contor = merge_dictionaries(
+                epoch_reward_contor, ep_reward_contor
+            )
 
         end_time = datetime.datetime.now()
         epoch_time = end_time - start_time
@@ -847,7 +828,7 @@ class AgentDQN:
             epoch_episode_nr_frames,
             epoch_max_qs,
             epoch_time,
-            epoch_reward_contor
+            epoch_reward_contor,
         )
         return epoch_stats
 
@@ -857,7 +838,7 @@ class AgentDQN:
         episode_nr_frames,
         ep_max_qs,
         epoch_time,
-        epoch_reward_contor
+        epoch_reward_contor,
     ) -> Dict:
         """Computes the statistics of the current validation epoch.
 
@@ -927,12 +908,7 @@ class AgentDQN:
             # Continue the process
             s = s_prime
 
-        return (
-            current_episode_reward,
-            ep_frames,
-            max_qs,
-            ep_reward_contor
-        )
+        return (current_episode_reward, ep_frames, max_qs, ep_reward_contor)
 
     def display_validation_epoch_info(self, stats):
         self.logger.info(
@@ -959,13 +935,18 @@ class AgentDQN:
         next_states = torch.stack(next_states, dim=0)
         dones = torch.Tensor(dones).unsqueeze(1)
 
+        if self.reward_perception:
+            rewards = rewards + self.reward_perception["shift"]
+
         q_values = self.policy_model(states)
         selected_q_value = q_values.gather(1, actions)
 
         next_q_values = self.target_model(next_states).detach()
         next_q_values = next_q_values.max(1)[0].unsqueeze(1)
-        expected_q_value = rewards + self.gamma * next_q_values * (1 - dones)
 
+        expected_q_value = rewards + self.gamma * (
+            next_q_values * (1 - dones) + (-1 / (1 - self.gamma)) * dones
+        )
         if self.loss_function == "mse_loss":
             loss = F.mse_loss(selected_q_value, expected_q_value)
 

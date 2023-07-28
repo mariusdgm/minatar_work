@@ -7,6 +7,5 @@ estimator:
     lin_hidden_out_size: 128
 
 reward_perception:
-  mapping: 
-    0: -1
-    1: 0
+  parameters:
+    shift: -1
