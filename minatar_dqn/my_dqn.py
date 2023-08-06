@@ -479,21 +479,21 @@ class AgentDQN:
         return action, max_q
 
     def get_max_q_val_for_state(self, state):
-        with torch.no_grad():
+        with torch.inference_mode():
             return self.policy_model(state).max(1)[0].item()
 
     def get_q_val_for_action(self, state, action):
-        with torch.no_grad():
+        with torch.inference_mode():
             return torch.index_select(
                 self.policy_model(state), 1, action.squeeze(0)
             ).item()
 
     def get_action_from_model(self, state):
-        with torch.no_grad():
+        with torch.inference_mode():
             return self.policy_model(state).max(1)[1].view(1, 1)
 
     def get_max_q_and_action(self, state):
-        with torch.no_grad():
+        with torch.inference_mode():
             maxq_and_action = self.policy_model(state).max(1)
             q_val = maxq_and_action[0].item()
             action = maxq_and_action[1].view(1, 1)
