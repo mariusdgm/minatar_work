@@ -937,6 +937,8 @@ class AgentDQN:
 
         if self.reward_perception:
             rewards = rewards + self.reward_perception["shift"]
+        
+        self.policy_model.train()
 
         q_values = self.policy_model(states)
         selected_q_value = q_values.gather(1, actions)
