@@ -323,6 +323,14 @@ class AgentDQN:
 
             self.logger.info("Applied redo parametrization to target model.")
 
+        # initialize the bias if we shift the reward distibution
+        if self.reward_perception:
+            bias = self.reward_perception["shift"] / (1 - self.gamma)
+            with torch.no_grad():
+                self.policy_model.fc[-1].bias.fill_(bias)
+                self.target_model.fc[-1].bias.fill_(bias)
+
+
     def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
         # returns state as [w, h, channels]
