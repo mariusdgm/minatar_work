@@ -20,6 +20,8 @@ from minatar_dqn.my_dqn import Conv_QNET, Conv_QNET_one, AgentDQN
 from minatar_dqn.utils import my_logging
 from minatar_dqn.my_dqn import build_environment
 
+from minatar_dqn.redo import apply_redo_parametrization
+
 from experiments.experiment_utils import (
     seed_everything,
     search_files_containing_string,
@@ -120,6 +122,20 @@ class PruningExperiment(AgentDQN):
                 self.num_actions,
                 **estimator_settings["args_"],
             )
+
+        redo_config = self.config.get("redo", {})
+        redo_option = redo_config.get("enabled", False)
+
+        if redo_option:
+            self.redo_scores = {"policy": [], "target": []}
+
+            tau = redo_config.get("tau", 0.005)
+            beta = redo_config.get("beta", 0.1)
+
+            self.policy_model = apply_redo_parametrization(
+                self.policy_model, tau=tau, beta=beta
+            )
+            
 
         else:
             estiamtor_name = estimator_settings["model"]
@@ -437,7 +453,7 @@ def main():
     file_dir = os.path.dirname(os.path.abspath(__file__))
     training_outputs_folder_path = os.path.join(proj_root, "experiments", "training", "outputs")
     pruning_outputs_folder_path = os.path.join(file_dir, "outputs")
-    training_timestamp_folder = "2023_05_15-18_23_40"
+    training_timestamp_folder = "2023_05_22-08_44_19"
 
     experiment_paths = collect_training_output_files(
         os.path.join(training_outputs_folder_path, training_timestamp_folder)
