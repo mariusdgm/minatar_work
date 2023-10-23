@@ -124,16 +124,18 @@ class PruningExperiment(AgentDQN):
             )
 
         redo_config = self.config.get("redo", {})
-        redo_option = redo_config.get("enabled", False)
+        redo_attach = redo_config.get("attach", False)
 
-        if redo_option:
+        if redo_attach:
             self.redo_scores = {"policy": [], "target": []}
 
-            tau = redo_config.get("tau", 0.005)
+            tau = redo_config.get("tau", 0.025)
             beta = redo_config.get("beta", 0.1)
+            selection_option = redo_config.get("selection_option", None)
+
 
             self.policy_model = apply_redo_parametrization(
-                self.policy_model, tau=tau, beta=beta
+                self.policy_model, tau=tau, beta=beta, selection_option=selection_option
             )
             
 

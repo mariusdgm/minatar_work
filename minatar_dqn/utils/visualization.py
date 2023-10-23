@@ -21,9 +21,9 @@ def load_training_stats(training_stats_file):
         Contains information needed to resume training at that point.
 
     Returns:
-        Tuple[dict, dict]: Tuple with the statistics contained in dictionaries. 
-                        The first element is the statistics of the training epochs. 
-                        The second element is the statistics of thestats of the validation epochs. 
+        Tuple[dict, dict]: Tuple with the statistics contained in dictionaries.
+                        The first element is the statistics of the training epochs.
+                        The second element is the statistics of thestats of the validation epochs.
     """
     checkpoint = torch.load(training_stats_file)
 
@@ -36,11 +36,11 @@ def load_training_stats(training_stats_file):
 def get_df_of_stat(
     stats, stat_name, show_epochs=False, epoch_frames=200_000, experiment=None
 ):
-    """Processes a training stats dictionary into a pd.Dataframe for easier data analysis. 
+    """Processes a training stats dictionary into a pd.Dataframe for easier data analysis.
 
     Args:
         stats (dict): dictionary with the epoch statistics
-        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards',
                             'episode_frames', 'episode_losses', 'episode_max_qs'.
         show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
                                     If 'show_epochs' is True, then the 'index' is transformed to match the epoch number. Defaults to False.
@@ -74,11 +74,11 @@ def get_df_of_stat(
 
 
 def get_df_of_stat_pruning(stats, stat_name):
-    """Processes a pruning stats dictionary into a pd.Dataframe for easier data analysis. 
+    """Processes a pruning stats dictionary into a pd.Dataframe for easier data analysis.
 
     Args:
         stats (dict): dictionary with the pruning validation statistics
-        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards',
         'episode_frames', 'episode_losses', 'episode_max_qs'
 
     Returns:
@@ -103,7 +103,7 @@ def plot_stat_log(stats, stat_name, title, show_epochs=False):
 
     Args:
         stats (dict): dictionary with the epoch statistics
-        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards',
                             'episode_frames', 'episode_losses', 'episode_max_qs'.
         title (string): title to show on plot. Defaults to None.
         show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
@@ -147,7 +147,7 @@ def plot_stat_log_multi(df, stat_name, title, show_epochs=False):
 
     Args:
         df (pd.Dataframe): pd.Dataframe that contains the statistics per epoch
-        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards',
                             'episode_frames', 'episode_losses', 'episode_max_qs'.
         title (string): title to show on the plot
         show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
@@ -205,7 +205,7 @@ def subplots_stats(train_log_file_name, stat_name, show_epochs):
 
     Args:
         train_log_file_name (string): Path to the training stats file.
-        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards',
                             'episode_frames', 'episode_losses', 'episode_max_qs'.
         show_epochs (bool, optional): The 'index' of the record is saved as the number of the frame.
                                     If 'show_epochs' is True, then the 'index' is transformed to match the epoch number. Defaults to False.
@@ -282,8 +282,8 @@ def load_pruning_experiment_data(pruning_exp_file):
         pruning_exp_file (string): Path to the statistics of the pruning experiment.
 
     Returns:
-        Tuple[dict, string]: Returns 2 variables. The first one is 
-        a dictionary containing the statistics of a pruning experiment 
+        Tuple[dict, string]: Returns 2 variables. The first one is
+        a dictionary containing the statistics of a pruning experiment
         (similar to the trianing session stats).
         The second argument is a string describing the pruning experiment.
     """
@@ -329,7 +329,7 @@ def plot_pruning_stat(stats, stat_name, title=None, show=False, plot_min_max=Fal
 
     Args:
         stats (dict): dictionary containing the statistics
-        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards', 
+        stat_name (string): name of the statistic to be extracted. Examples: 'episode_rewards',
         'episode_frames', 'episode_losses', 'episode_max_qs'
         title (string): title to show on plot. Defaults to None.
         show (bool, optional): Wether to call plt.show inside the function. Defaults to False.
@@ -450,8 +450,7 @@ def plot_pruning_experiment_data(baseline_log_file_name, pruning_log_file_name):
 
 
 if __name__ == "__main__":
-
-    base_path = r"D:\Work\PhD\minatar_work\experiments\pruning\outputs"
+    base_path = r"D:\Work\repos\RL\minatar_work\experiments\pruning\outputs"
     timestamp_str = "2023_03_17-02_50_37"
     # model_str = "conv_model_16"
     model_str = "conv_model_32"
@@ -474,7 +473,7 @@ if __name__ == "__main__":
     # build list with paths to stats files
 
     # training_outputs_folder_path = (
-    #     r"D:\Work\PhD\minatar_work\experiments\training\outputs"
+    #     r"D:\Work\repos\RL\minatar_work\experiments\training\outputs"
     # )
 
     # # training_timestamp_folder = "2023_03_16-14_45_10"

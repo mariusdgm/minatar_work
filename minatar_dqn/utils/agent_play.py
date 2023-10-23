@@ -33,7 +33,6 @@ def get_action_in_state(model, state, num_actions, rand_chance=0.001):
 
 ### Watch the agent in play
 def play_game_visual(model_path, config_path):
-
     with open(config_path, "r") as f:
         config_contents = yaml.safe_load(f)
 
@@ -45,7 +44,14 @@ def play_game_visual(model_path, config_path):
     in_channels = in_features[0]
     num_actions = env.num_actions()
 
-    model = Conv_QNET(in_features, in_channels, num_actions, conv_hidden_out_size=config_contents["estimator"]["args_"]["conv_hidden_out_size"])
+    model = Conv_QNET(
+        in_features,
+        in_channels,
+        num_actions,
+        conv_hidden_out_size=config_contents["estimator"]["args_"][
+            "conv_hidden_out_size"
+        ],
+    )
     checkpoint = torch.load(model_path)
     model.load_state_dict(checkpoint["policy_model_state_dict"])
 
@@ -60,7 +66,6 @@ def play_game_visual(model_path, config_path):
     game_reward.set(0.0)
 
     def game_step_visual():
-
         if is_terminate.get() == True:
             print("Final Game score: ", str(game_reward.get()))
             time.sleep(3)
@@ -87,8 +92,7 @@ def play_game_visual(model_path, config_path):
 
 
 if __name__ == "__main__":
-
-    eperiment_path = r"D:\Work\PhD\minatar_work\experiments\training\outputs\2023_03_02-13_31_43\conv_model_32\breakout\0"
+    eperiment_path = r"D:\Work\repos\RL\minatar_work\experiments\training\outputs\2023_03_02-13_31_43\conv_model_32\breakout\0"
     model_file = r"conv_model_32_breakout_0_model"
     config_file = r"conv_model_32_breakout_0_config"
 

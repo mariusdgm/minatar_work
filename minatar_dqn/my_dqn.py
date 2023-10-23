@@ -215,7 +215,8 @@ class AgentDQN:
         )
 
         redo_config = config.get("redo", {})
-        self.redo = redo_config.get("enabled", False)
+        self.redo = redo_config.get("attach", False)
+        self.redo_reinit = redo_config.get("enabled", False)
 
         self.reward_perception = None
         reward_perception_config = config.get("reward_perception", None)
@@ -309,16 +310,17 @@ class AgentDQN:
 
             self.redo_scores = {"policy": [], "target": []}
 
-            tau = redo_params.get("tau", 0.005)
+            tau = redo_params.get("tau", 0.025)
             beta = redo_params.get("beta", 0.1)
+            selection_option = redo_params.get("selection_option", None)
 
             self.policy_model = apply_redo_parametrization(
-                self.policy_model, tau=tau, beta=beta
+                self.policy_model, tau=tau, beta=beta, selection_option=selection_option
             )
             self.logger.info("Applied redo parametrization to policy model.")
 
             self.target_model = apply_redo_parametrization(
-                self.target_model, tau=tau, beta=beta
+                self.target_model, tau=tau, beta=beta, selection_option=selection_option
             )
 
             self.logger.info("Applied redo parametrization to target model.")
@@ -430,6 +432,11 @@ class AgentDQN:
             self.redo_scores["policy"].append(self.policy_model.get_dormant_scores())
             self.redo_scores["target"].append(self.target_model.get_dormant_scores())
             status_dict["redo_scores"] = self.redo_scores
+            
+            # apply redo reinitialization if enabled
+            if self.redo_reinit:
+                self.policy_model = self.policy_model.redo()
+                self.target_model = self.target_model.redo()
 
         torch.save(
             status_dict,

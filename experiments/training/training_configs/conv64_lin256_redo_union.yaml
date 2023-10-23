@@ -1,0 +1,14 @@
+experiment_name: conv64_lin256
+
+estimator:
+  model: Conv_QNET
+  args_:
+    conv_hidden_out_size: 64
+    lin_hidden_out_size: 256
+
+redo:
+  attach: True
+  enabled: True
+  tau: 0.025
+  beta: 0.1
+  selection_option: union

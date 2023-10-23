@@ -1,16 +1,16 @@
 epochs_to_train: 20
 seeds: [0, 1]
-environments: [breakout, space_invaders]
+environments: [breakout]
 # environments: [breakout, space_invaders, asterix]
 
 agent_params:
   agent: AgentDQN
   args_:
-    train_step_cnt: 200_000
+    train_step_cnt: 200_0
     validation_enabled: True
-    validation_step_cnt: 125_000
+    validation_step_cnt: 125_0
     validation_epsilon: 0.001
-    replay_start_size: 5_000
+    replay_start_size: 5_00
     
     batch_size: 32
     training_freq: 4
@@ -42,8 +42,10 @@ replay_buffer:
   n_step: 0
 
 redo:
-  enabled: True
-  tau: 0.005
+  attach: True
+  enabled: False
+  tau: 0.025
   beta: 0.1
+  selection_option: null
 
 reward_perception: null
