@@ -433,11 +433,6 @@ class AgentDQN:
             self.redo_scores["target"].append(self.target_model.get_dormant_scores())
             status_dict["redo_scores"] = self.redo_scores
             
-            # apply redo reinitialization if enabled
-            if self.redo_reinit:
-                self.policy_model = self.policy_model.redo()
-                self.target_model = self.target_model.redo()
-
         torch.save(
             status_dict,
             self.train_stats_file,
@@ -545,6 +540,11 @@ class AgentDQN:
 
             if self.save_checkpoints:
                 self.save_checkpoint()
+                
+            # Reinit with redo
+            if self.redo and self.redo_reinit:
+                self.policy_model = self.policy_model.redo()
+                self.target_model = self.target_model.redo()
 
             end_time = datetime.datetime.now()
             epoch_time = end_time - start_time
