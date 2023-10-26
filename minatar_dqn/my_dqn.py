@@ -332,7 +332,6 @@ class AgentDQN:
                 self.policy_model.fc[-1].bias.fill_(bias)
                 self.target_model.fc[-1].bias.fill_(bias)
 
-
     def _read_and_init_envs(self):
         """Read dimensions of the input and output of the simulation environment"""
         # returns state as [w, h, channels]
@@ -432,7 +431,7 @@ class AgentDQN:
             self.redo_scores["policy"].append(self.policy_model.get_dormant_scores())
             self.redo_scores["target"].append(self.target_model.get_dormant_scores())
             status_dict["redo_scores"] = self.redo_scores
-            
+
         torch.save(
             status_dict,
             self.train_stats_file,
@@ -540,11 +539,11 @@ class AgentDQN:
 
             if self.save_checkpoints:
                 self.save_checkpoint()
-                
+
             # Reinit with redo
             if self.redo and self.redo_reinit:
-                self.policy_model = self.policy_model.apply_redo()
-                self.target_model = self.target_model.apply_redo()
+                self.policy_model.apply_redo()
+                self.target_model.apply_redo()
 
             end_time = datetime.datetime.now()
             epoch_time = end_time - start_time
@@ -644,7 +643,6 @@ class AgentDQN:
         while (not is_terminated) and (
             epoch_t < train_frames
         ):  # can early stop episode if the frame limit was reached
-
             action, max_q = self.select_action(self.train_s, self.t, self.num_actions)
             s_prime, reward, is_terminated, truncated, info = self.train_env.step(
                 action
@@ -900,7 +898,6 @@ class AgentDQN:
 
         is_terminated = False
         while not is_terminated:
-
             action, max_q = self.select_action(
                 s, self.t, self.num_actions, epsilon=self.validation_epsilon
             )
@@ -952,7 +949,7 @@ class AgentDQN:
 
         if self.reward_perception:
             rewards = rewards + self.reward_perception["shift"]
-        
+
         self.policy_model.train()
 
         q_values = self.policy_model(states)
@@ -1061,7 +1058,6 @@ def main():
 
 
 if __name__ == "__main__":
-
     seed_everything(0)
     main()
     # play_game_visual("breakout")

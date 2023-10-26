@@ -6,9 +6,9 @@ environments: [breakout]
 agent_params:
   agent: AgentDQN
   args_:
-    train_step_cnt: 200_00
+    train_step_cnt: 200_000
     validation_enabled: True
-    validation_step_cnt: 125_00
+    validation_step_cnt: 125_000
     validation_epsilon: 0.001
     replay_start_size: 5_000
     
@@ -22,7 +22,7 @@ agent_params:
     epsilon:
       start: 1.0
       end: 0.01
-      decay: 250_00
+      decay: 250_000
 
 estimator:
   model: Conv_QNET

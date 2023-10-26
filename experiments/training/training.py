@@ -360,7 +360,7 @@ def main():
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
 
     start_parallel_training_session(
-        runs_configs[:2]
+        runs_configs
     )
 
     # print(runs_configs[1])
