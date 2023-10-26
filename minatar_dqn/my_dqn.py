@@ -543,8 +543,8 @@ class AgentDQN:
                 
             # Reinit with redo
             if self.redo and self.redo_reinit:
-                self.policy_model = self.policy_model.redo()
-                self.target_model = self.target_model.redo()
+                self.policy_model = self.policy_model.apply_redo()
+                self.target_model = self.target_model.apply_redo()
 
             end_time = datetime.datetime.now()
             epoch_time = end_time - start_time

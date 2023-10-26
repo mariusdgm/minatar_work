@@ -276,7 +276,15 @@ def run_training_experiment(config: Dict) -> True:
         return True
 
     except Exception as exc:
-        return str(exc)
+        # Capture the stack trace along with the exception message
+        error_info = traceback.format_exc()
+
+        # Log this information using your logger, if it's available
+        if 'logger' in locals():
+            logger.error("An error occurred: %s", error_info)
+        
+        # Return the error info so it can be collected by the parent process
+        return error_info
 
 
 
@@ -304,9 +312,13 @@ def start_parallel_training_session(
             conf["restart_training_timestamp"] = restart_training_timestamp
 
     with multiprocessing.Pool(processes=processes) as pool:
-        statuses = list(pool.map(run_training_experiment, configs))
+        results = list(pool.map(run_training_experiment, configs))
 
-    print(f"Parallel job run statuses: {statuses}")
+    for config, result in zip(configs, results):
+        if result is not True:
+            print(f"Error in config {config['experiment_name']}: {result}")
+
+    print("All parallel jobs completed.")
 
 def start_single_training_session(
     config: Dict,
@@ -348,10 +360,11 @@ def main():
     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
 
     start_parallel_training_session(
-        runs_configs
+        runs_configs[:2]
     )
 
-    # start_single_training_session(runs_configs[4])
+    # print(runs_configs[1])
+    # start_single_training_session(runs_configs[1])
 
     my_logging.cleanup_file_handlers()
 

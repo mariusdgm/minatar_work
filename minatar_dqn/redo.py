@@ -243,10 +243,15 @@ def apply_redo_parametrization(net, tau=0.025, beta=0.1, selection_option=None, 
     def get_dormant_scores(self):
         scores = [h.get_score() for h in hndlrs]
         return scores
+    
+    def apply_redo(self):
+        for handler in hndlrs:
+            handler.redo()
 
     net.get_dormant_ratios = get_dormant_ratios.__get__(net)
     net.get_dormant_scores = get_dormant_scores.__get__(net)
-
+    net.apply_redo = apply_redo.__get__(net)
+    
     return net
 
 
