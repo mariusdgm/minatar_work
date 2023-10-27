@@ -1,4 +1,4 @@
-epochs_to_train: 15
+epochs_to_train: 20
 seeds: [0]
 environments: [breakout]
 # environments: [breakout, space_invaders, asterix]

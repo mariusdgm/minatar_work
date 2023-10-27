@@ -455,7 +455,7 @@ def main():
     file_dir = os.path.dirname(os.path.abspath(__file__))
     training_outputs_folder_path = os.path.join(proj_root, "experiments", "training", "outputs")
     pruning_outputs_folder_path = os.path.join(file_dir, "outputs")
-    training_timestamp_folder = "2023_05_22-08_44_19"
+    training_timestamp_folder = "2023_10_26-22_11_20"
 
     experiment_paths = collect_training_output_files(
         os.path.join(training_outputs_folder_path, training_timestamp_folder)
