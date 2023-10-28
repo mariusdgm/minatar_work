@@ -1,6 +1,7 @@
 import os
 import sys
 
+import traceback
 import yaml
 
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -85,7 +86,6 @@ class PruningExperiment(AgentDQN):
         self.t = 0
 
     def initialize_experiment(self):
-
         seed_everything(self.config["seed"])
 
         self.validation_env = build_environment(
@@ -133,11 +133,9 @@ class PruningExperiment(AgentDQN):
             beta = redo_config.get("beta", 0.1)
             selection_option = redo_config.get("selection_option", None)
 
-
             self.policy_model = apply_redo_parametrization(
                 self.policy_model, tau=tau, beta=beta, selection_option=selection_option
             )
-            
 
         else:
             estiamtor_name = estimator_settings["model"]
@@ -208,7 +206,6 @@ class PruningExperiment(AgentDQN):
             self.logger.info(f"Baseline experiment ended")
 
     def pruning_experiment(self, pruning_value: float):
-
         self.initialize_experiment()
         if pruning_value > 0 and self.pruning_function:
             self.pruning_function(self.policy_model, pruning_value)
@@ -280,7 +277,6 @@ def pruning_method_4(model, pruning_factor):
 
 ### Experiment jobs
 def create_baseline_experiment_result(logger, config, model_path, exp_out_folder):
-
     exp_out_file = os.path.join(exp_out_folder, "baseline")
 
     seed_everything(0)
@@ -300,37 +296,42 @@ def create_baseline_experiment_result(logger, config, model_path, exp_out_folder
 def run_experiment_with_params(
     logger, config, model_path, path_to_pruning_experiment_folder, pruning_params
 ):
-    # Extract individual parameters from the dictionary
+    try:
+        # Extract individual parameters from the dictionary
+        exp_out_file_name = pruning_params["exp_out_file_name"]
+        pruning_function = pruning_params["pruning_function"]
 
-    exp_out_file_name = pruning_params["exp_out_file_name"]
-    pruning_function = pruning_params["pruning_function"]
+        if "experiment_info" in pruning_params:
+            experiment_info = pruning_params["experiment_info"]
+        else:
+            experiment_info = pruning_function.__doc__
 
-    if "experiment_info" in pruning_params:
-        experiment_info = pruning_params["experiment_info"]
-    else:
-        experiment_info = pruning_function.__doc__
+        logger.info(f"Initializing experiment: {exp_out_file_name}")
 
-    logger.info(f"Initializing experiment: {exp_out_file_name}")
+        ### Setup and run pruning experiment
+        exp_out_file = os.path.join(
+            path_to_pruning_experiment_folder, exp_out_file_name
+        )
 
-    ### Setup and run pruning experiment
-    exp_out_file = os.path.join(path_to_pruning_experiment_folder, exp_out_file_name)
+        seed_everything(0)
 
-    seed_everything(0)
+        pruning_experiment = PruningExperiment(
+            logger=logger,
+            config=config,
+            model_path=model_path,
+            exp_out_file=exp_out_file,
+            pruning_function=pruning_function,
+            experiment_info=experiment_info,
+        )
 
-    pruning_experiment = PruningExperiment(
-        logger=logger,
-        config=config,
-        model_path=model_path,
-        exp_out_file=exp_out_file,
-        pruning_function=pruning_function,
-        experiment_info=experiment_info,
-    )
+        pruning_experiment.perform_multiple_experiments(
+            [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
+        )
 
-    pruning_experiment.perform_multiple_experiments(
-        [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
-    )
-
-    return True
+    except Exception as exc:
+        error_info = traceback.format_exc()
+        logger.error("An error occurred in run_experiment_with_params: %s", error_info)
+        return error_info
 
 
 def run_parallel_pruning_experiment(
@@ -362,7 +363,7 @@ def run_parallel_pruning_experiment(
     experiment_params = [exp_1_params, exp_2_params, exp_3_params, exp_4_params]
 
     for pruning_params in experiment_params:
-        run_experiment_with_params(
+        result = run_experiment_with_params(
             logger,
             config,
             model_path,
@@ -370,9 +371,17 @@ def run_parallel_pruning_experiment(
             pruning_params,
         )
 
+    if isinstance(result, str):
+        # If the result is a string, an error has occurred.
+        logger.error(
+            f"Error occurred during pruning experiment with params {pruning_params['exp_out_file_name']}: {result}"
+        )
+
+        # Optionally, stop the execution
+        # raise RuntimeError(result)
+
 
 def run_pruning_experiment(experiment_paths: List[Dict]):
-
     model_path = experiment_paths["model_path"]
     config_path = experiment_paths["config_path"]
     training_timestamp_folder = experiment_paths["training_timestamp_folder"]
@@ -420,14 +429,17 @@ def run_pruning_experiment(experiment_paths: List[Dict]):
 
 
 def start_parallel_pruning_session(
-    experiment_paths: List[Dict], training_timestamp_folder:str, pruning_output_path:str, processes:int=8
+    experiment_paths: List[Dict],
+    training_timestamp_folder: str,
+    pruning_output_path: str,
+    processes: int = 8,
 ):
     """Perform multiple pruning experiments in parallel.
 
     Args:
-        experiment_paths (List[Dict]): A list dictionaries that group all the paths to files relevant to a trained model. 
-        training_timestamp_folder (str): The timestamp string representing the top level folder where the outputs of a 
-                                        training session can be found. 
+        experiment_paths (List[Dict]): A list dictionaries that group all the paths to files relevant to a trained model.
+        training_timestamp_folder (str): The timestamp string representing the top level folder where the outputs of a
+                                        training session can be found.
         pruning_output_path (str): The top level folder where the outputs of the pruning experiment will be saved.
         processes (int, optional): The number of processes to be started in parallel. Defaults to 8.
     """
@@ -453,7 +465,9 @@ def main():
 
     # Collect all paths to models in a specified folder
     file_dir = os.path.dirname(os.path.abspath(__file__))
-    training_outputs_folder_path = os.path.join(proj_root, "experiments", "training", "outputs")
+    training_outputs_folder_path = os.path.join(
+        proj_root, "experiments", "training", "outputs"
+    )
     pruning_outputs_folder_path = os.path.join(file_dir, "outputs")
     training_timestamp_folder = "2023_10_26-22_11_20"
 
