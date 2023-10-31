@@ -2,5 +2,5 @@ checkpoints/
 experiments/training/outputs
 experiments/pruning/outputs
 experiments/pruning/imgs
+experiments/redo
 notebooks/imgs
-

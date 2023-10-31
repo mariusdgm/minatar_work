@@ -1,4 +1,4 @@
-### 1.
+### 1. done, validated
 Get a model, train for a bit with REDO enabled
 check Q value for action before redo
 Apply redo
