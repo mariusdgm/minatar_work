@@ -78,7 +78,14 @@ class ReDo:
             running_avg_updated[idxs] = 0
             self.module.running_avg = running_avg_updated
 
-        return idxs
+        inbound_name = self.inbound.layer_name
+        outbound_name = self.outbound.layer_name
+        
+        return {
+            "indexes": idxs, 
+            "inbound": inbound_name, 
+            "outbound": outbound_name
+        }
 
     def _reinit(self):
         w = self.inbound.weight.data.clone()
@@ -116,7 +123,14 @@ class ReDo:
         module.register_buffer("running_avg_cnt", torch.zeros(1, device=device))
 
         # register hook
-        fn = ReDo(module, inbound, outbound, tau=tau, beta=beta)
+        fn = ReDo(
+            module,
+            inbound,
+            outbound,
+            tau=tau,
+            beta=beta,
+            selection_option=selection_option,
+        )
         module.register_forward_hook(fn)
         return fn
 
@@ -159,14 +173,70 @@ def apply_redo_parametrization(
         return scores
 
     def apply_redo(self):
-        reset_indexes = [h.redo() for h in hndlrs]
-        return reset_indexes
+        reset_details = [h.redo() for h in hndlrs]
+        return reset_details
 
     net.get_dormant_ratios = get_dormant_ratios.__get__(net)
     net.get_dormant_scores = get_dormant_scores.__get__(net)
     net.apply_redo = apply_redo.__get__(net)
 
     return net
+
+def map_layers_to_optimizer_indices(model, optimizer):
+    """
+    Maps layer names and parameter types (weight or bias) to optimizer indices.
+
+    Args:
+    - model (nn.Module): The neural network model.
+    - optimizer (torch.optim.Optimizer): The optimizer used with the model.
+
+    Returns:
+    - dict: A dictionary mapping from layer names with parameter type to optimizer indices.
+    """
+    param_to_name = {}
+    for name, module in model.named_modules():
+        if hasattr(module, "weight") and module.weight is not None:
+            param_to_name[module.weight] = f"{name}.weight"
+        if hasattr(module, "bias") and module.bias is not None:
+            param_to_name[module.bias] = f"{name}.bias"
+
+    layer_to_optim_idx = {}
+    for idx, opt_param in enumerate(optimizer.param_groups[0]["params"]):
+        if opt_param in param_to_name:
+            layer_to_optim_idx[param_to_name[opt_param]] = idx
+
+    return layer_to_optim_idx
+
+def reset_optimizer_states(apply_redo_output, optimizer, layer_to_optim_idx):
+    """
+    Reset the optimizer state variables for specific layers and indexes.
+
+    Args:
+    - apply_redo_output (list): Output from the apply_redo function, indicating which layers and indexes to reset.
+    - optimizer (torch.optim.Optimizer): The optimizer used with the model.
+    - layer_to_optim_idx (dict): Dictionary mapping layer names to optimizer indices.
+    """
+    for redo_info in apply_redo_output:
+        inbound_layer = redo_info["inbound"]
+        indexes = redo_info["indexes"]
+
+        # Assuming we are resetting the states for both weights and biases.
+        # You might need to adjust this depending on your needs.
+        for param_type in ["weight", "bias"]:
+            layer_key = f"{inbound_layer}.{param_type}"
+            if layer_key in layer_to_optim_idx:
+                optim_idx = layer_to_optim_idx[layer_key]
+                param = optimizer.param_groups[0]["params"][optim_idx]
+
+                # Check if this parameter has state and reset if necessary
+                if param in optimizer.state:
+                    state = optimizer.state[param]
+
+                    # For Adam optimizer
+                    if "exp_avg" in state:
+                        state['exp_avg'].view(-1)[indexes] = 0.0
+                    if "exp_avg_sq" in state:
+                        state['exp_avg_sq'].view(-1)[indexes] = 0.0
 
 
 def _test_register():

@@ -1,6 +1,8 @@
 import torch.autograd as autograd
 import torch.nn as nn
 
+from collections import OrderedDict
+
 class Conv_QNET(nn.Module):
     def __init__(
         self,
@@ -19,26 +21,37 @@ class Conv_QNET(nn.Module):
         self.conv_hidden_out_size = conv_hidden_out_size
         self.lin_hidden_out_size = lin_hidden_out_size
 
-        # conv layers
+        # Convolutional layers with names
         self.features = nn.Sequential(
-            nn.Conv2d(
-                self.in_channels, self.conv_hidden_out_size, kernel_size=3, stride=1
-            ),
-            nn.ReLU(),
-            nn.Conv2d(
-                self.conv_hidden_out_size,
-                self.conv_hidden_out_size,
-                kernel_size=3,
-                stride=1,
-            ),
-            nn.ReLU(),
+            OrderedDict([
+                ("conv1", nn.Conv2d(
+                    self.in_channels, self.conv_hidden_out_size, kernel_size=3, stride=1
+                )),
+                ("relu1", nn.ReLU()),
+                ("conv2", nn.Conv2d(
+                    self.conv_hidden_out_size,
+                    self.conv_hidden_out_size,
+                    kernel_size=3,
+                    stride=1,
+                )),
+                ("relu2", nn.ReLU()),
+            ])
         )
 
+        # Linear layers with names
         self.fc = nn.Sequential(
-            nn.Linear(self.size_linear_unit(), self.lin_hidden_out_size),
-            nn.ReLU(),
-            nn.Linear(self.lin_hidden_out_size, self.num_actions),
+            OrderedDict([
+                ("lin1", nn.Linear(self.size_linear_unit(), self.lin_hidden_out_size)),
+                ("relu3", nn.ReLU()),
+                ("lin2", nn.Linear(self.lin_hidden_out_size, self.num_actions)),
+            ])
         )
+        
+        self._assign_names()
+        
+    def _assign_names(self):
+        for name, module in self.named_modules():
+            module.layer_name = name
 
     def size_linear_unit(self):
         return (
