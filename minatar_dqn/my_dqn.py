@@ -21,7 +21,11 @@ from minatar_dqn.utils.generic import merge_dictionaries
 from minatar_dqn.models import Conv_QNET, Conv_QNET_one
 from minatar_dqn.minatar_gym_wrappers import PermuteMinatarObsSpace
 
-from minatar_dqn.redo import apply_redo_parametrization
+from minatar_dqn.redo import (
+    apply_redo_parametrization,
+    reset_optimizer_states,
+    map_layers_to_optimizer_indices,
+)
 
 
 # TODO: (NICE TO HAVE) gpu device at: model, wrapper of environment (in my case it would be get_state...),
@@ -217,6 +221,7 @@ class AgentDQN:
         redo_config = config.get("redo", {})
         self.redo = redo_config.get("attach", False)
         self.redo_reinit = redo_config.get("enabled", False)
+        self.redo_freq = redo_config.get("redo_freq", 1_000)
 
         self.reward_perception = None
         reward_perception_config = config.get("reward_perception", None)
@@ -540,11 +545,6 @@ class AgentDQN:
             if self.save_checkpoints:
                 self.save_checkpoint()
 
-            # Reinit with redo
-            if self.redo and self.redo_reinit:
-                self.policy_model.apply_redo()
-                self.target_model.apply_redo()
-
             end_time = datetime.datetime.now()
             epoch_time = end_time - start_time
 
@@ -673,6 +673,16 @@ class AgentDQN:
                     self.losses.append(loss_val)
                     self.policy_model_update_counter += 1
                     policy_trained_times += 1
+
+                if self.redo and self.redo_reinit:
+                    if self.t % self.redo_freq == 0 and self.t > self.replay_start_size:
+                        reset_details = self.policy_model.apply_redo()
+                        layer_to_optim_idx = map_layers_to_optimizer_indices(
+                            self.policy_model, self.optimizer
+                        )
+                        reset_optimizer_states(
+                            reset_details, self.optimizer, layer_to_optim_idx
+                        )
 
                 # Update the target network only after some number of policy network updates
                 if (

@@ -44,8 +44,9 @@ replay_buffer:
 redo:
   attach: True
   enabled: False
-  tau: 0.025
-  beta: 0.1
+  tau: 0.1
+  beta: 1
+  redo_freq: 1_000
   selection_option: null
 
 reward_perception: null
