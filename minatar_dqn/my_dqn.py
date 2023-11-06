@@ -219,7 +219,7 @@ class AgentDQN:
         )
 
         redo_config = config.get("redo", {})
-        self.redo = redo_config.get("attach", False)
+        self.redo_attach = redo_config.get("attach", False)
         self.redo_reinit = redo_config.get("enabled", False)
         self.redo_freq = redo_config.get("redo_freq", 1_000)
 
@@ -310,7 +310,7 @@ class AgentDQN:
 
         self.logger.info("Initialized newtworks and optimizer.")
 
-        if self.redo:
+        if self.redo_attach:
             redo_params = config["redo"]
 
             self.redo_scores = {"policy": [], "target": []}
@@ -369,7 +369,7 @@ class AgentDQN:
         self.training_stats = checkpoint["training_stats"]
         self.validation_stats = checkpoint["validation_stats"]
 
-        if self.redo:
+        if self.redo_attach:
             self.redo_scores = checkpoint["redo_scores"]
 
     def save_checkpoint(self):
@@ -432,7 +432,7 @@ class AgentDQN:
             "validation_stats": self.validation_stats,
         }
 
-        if self.redo:
+        if self.redo_attach:
             self.redo_scores["policy"].append(self.policy_model.get_dormant_scores())
             self.redo_scores["target"].append(self.target_model.get_dormant_scores())
             status_dict["redo_scores"] = self.redo_scores
@@ -575,7 +575,6 @@ class AgentDQN:
         epoch_losses = []
         epoch_max_qs = []
 
-        epoch_reward_contor = {}
 
         start_time = datetime.datetime.now()
         while epoch_t < self.train_step_cnt:
@@ -602,9 +601,7 @@ class AgentDQN:
                 epoch_losses.extend(ep_losses)
                 epoch_max_qs.extend(ep_max_qs)
 
-                epoch_reward_contor = merge_dictionaries(
-                    epoch_reward_contor, self.ep_reward_contor
-                )
+                
 
                 self.episodes += 1
                 self.reset_training_episode_tracker()
@@ -620,8 +617,11 @@ class AgentDQN:
             epoch_losses,
             epoch_max_qs,
             epoch_time,
-            epoch_reward_contor,
         )
+        
+        # Compute redo stats if enabled
+        
+        
         return epoch_stats
 
     def train_episode(self, epoch_t: int, train_frames: int):
@@ -649,11 +649,6 @@ class AgentDQN:
             )
             s_prime = torch.tensor(s_prime, device=device).float()
 
-            if reward in self.ep_reward_contor:
-                self.ep_reward_contor[reward] += 1
-            else:
-                self.ep_reward_contor[reward] = 1
-
             self.replay_buffer.append(
                 self.train_s, action, reward, s_prime, is_terminated
             )
@@ -674,7 +669,7 @@ class AgentDQN:
                     self.policy_model_update_counter += 1
                     policy_trained_times += 1
 
-                if self.redo and self.redo_reinit:
+                if self.redo_attach and self.redo_reinit:
                     if self.t % self.redo_freq == 0 and self.t > self.replay_start_size:
                         reset_details = self.policy_model.apply_redo()
                         layer_to_optim_idx = map_layers_to_optimizer_indices(
@@ -712,7 +707,6 @@ class AgentDQN:
             target_trained_times,
             self.losses,
             self.max_qs,
-            self.ep_reward_contor,
         )
 
     def reset_training_episode_tracker(self):
@@ -721,7 +715,6 @@ class AgentDQN:
         self.ep_frames = 0
         self.losses = []
         self.max_qs = []
-        self.ep_reward_contor = {}
 
         self.train_s, info = self.train_env.reset()
         self.train_s = torch.tensor(self.train_s, device=device).float()
@@ -756,7 +749,6 @@ class AgentDQN:
         ep_losses,
         ep_max_qs,
         epoch_time,
-        epoch_reward_contor,
     ) -> Dict:
         """Computes the statistics of the current training epoch.
 
@@ -768,7 +760,6 @@ class AgentDQN:
             ep_losses (List): list contraining losses from the current epoch.
             ep_max_qs (List): list contraining maximum Q values from the current epoch.
             epoch_time (float): How much time the epoch took to compute in seconds.
-            epoch_reward_contor (Dict): dictionary containing the number of times each reward was seen in the current epoch.
 
         Returns:
             Dict: Dictionary with the relevant statistics
@@ -785,7 +776,6 @@ class AgentDQN:
         stats["policy_trained_times"] = policy_trained_times
         stats["target_trained_times"] = target_trained_times
         stats["epoch_time"] = epoch_time
-        stats["reward_contor"] = epoch_reward_contor
 
         return stats
 
@@ -821,8 +811,6 @@ class AgentDQN:
         epoch_max_qs = []
         valiation_t = 0
 
-        epoch_reward_contor = {}
-
         start_time = datetime.datetime.now()
 
         while valiation_t < self.validation_step_cnt:
@@ -839,9 +827,6 @@ class AgentDQN:
             epoch_episode_nr_frames.append(ep_frames)
             epoch_max_qs.extend(ep_max_qs)
 
-            epoch_reward_contor = merge_dictionaries(
-                epoch_reward_contor, ep_reward_contor
-            )
 
         end_time = datetime.datetime.now()
         epoch_time = end_time - start_time
@@ -851,7 +836,6 @@ class AgentDQN:
             epoch_episode_nr_frames,
             epoch_max_qs,
             epoch_time,
-            epoch_reward_contor,
         )
         return epoch_stats
 
@@ -861,7 +845,6 @@ class AgentDQN:
         episode_nr_frames,
         ep_max_qs,
         epoch_time,
-        epoch_reward_contor,
     ) -> Dict:
         """Computes the statistics of the current validation epoch.
 
@@ -870,7 +853,6 @@ class AgentDQN:
             episode_nr_frames (List): list contraining the final number of frames of each episode in the current epoch.
             ep_max_qs (List): list contraining maximum Q values from the current epoch.
             epoch_time (float): How much time the epoch took to compute in seconds.
-            epoch_reward_contor (Dict): dictionary containing the number of times each reward was seen in the current epoch.
 
         Returns:
             Dict: Dictionary with the relevant statistics
@@ -883,7 +865,6 @@ class AgentDQN:
         stats["episode_frames"] = self.get_vector_stats(episode_nr_frames)
         stats["episode_max_qs"] = self.get_vector_stats(ep_max_qs)
         stats["epoch_time"] = epoch_time
-        stats["reward_contor"] = epoch_reward_contor
 
         return stats
 

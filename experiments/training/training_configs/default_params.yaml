@@ -1,6 +1,6 @@
 epochs_to_train: 20
 seeds: [0]
-environments: [breakout]
+environments: [asterix]
 # environments: [breakout, space_invaders, asterix]
 
 agent_params:

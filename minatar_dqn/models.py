@@ -47,11 +47,6 @@ class Conv_QNET(nn.Module):
             ])
         )
         
-        self._assign_names()
-        
-    def _assign_names(self):
-        for name, module in self.named_modules():
-            module.layer_name = name
 
     def size_linear_unit(self):
         return (

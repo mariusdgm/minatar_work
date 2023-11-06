@@ -49,16 +49,20 @@ class ReDo:
             smallest_weights_idx = torch.argsort(
                 self.inbound.weight.data.abs().mean(dim=1)
             )
-            smallest_weights_idx = smallest_weights_idx[: len(idxs)]
+            idxs_set = set(idxs.tolist())
+            smallest_weights_idx = smallest_weights_idx.flatten()
+            smallest_weights_set = set(smallest_weights_idx.tolist())
 
             if self.selection_option == "intersect":
                 idxs = torch.tensor(
-                    list(set(idxs.tolist()) & set(smallest_weights_idx.tolist())),
+                    list(idxs_set & smallest_weights_set),
+                    dtype=torch.long,
                     device=idxs.device,
                 )
             elif self.selection_option == "union":
                 idxs = torch.tensor(
-                    list(set(idxs.tolist()) | set(smallest_weights_idx.tolist())),
+                    list(idxs_set | smallest_weights_set),
+                    dtype=torch.long,
                     device=idxs.device,
                 )
 
@@ -80,12 +84,8 @@ class ReDo:
 
         inbound_name = self.inbound.layer_name
         outbound_name = self.outbound.layer_name
-        
-        return {
-            "indexes": idxs, 
-            "inbound": inbound_name, 
-            "outbound": outbound_name
-        }
+
+        return {"indexes": idxs, "inbound": inbound_name, "outbound": outbound_name}
 
     def _reinit(self):
         w = self.inbound.weight.data.clone()
@@ -135,10 +135,18 @@ class ReDo:
         return fn
 
 
+def assign_layer_names(net):
+    for name, module in net.named_modules():
+        module.layer_name = name
+
+
 def apply_redo_parametrization(
     net, tau=0.025, beta=0.1, selection_option=None, verbose=False
 ):
     """Assumes the modules are properly ordered."""
+    # Add module names to layers
+    assign_layer_names(net)
+
     supported_layers = (nn.ReLU, nn.LayerNorm, nn.Linear, nn.Conv2d)
     layers = [(k, v) for k, v in net.named_modules() if isinstance(v, supported_layers)]
     hndlrs = []
@@ -182,6 +190,7 @@ def apply_redo_parametrization(
 
     return net
 
+
 def map_layers_to_optimizer_indices(model, optimizer):
     """
     Maps layer names and parameter types (weight or bias) to optimizer indices.
@@ -207,6 +216,7 @@ def map_layers_to_optimizer_indices(model, optimizer):
 
     return layer_to_optim_idx
 
+
 def reset_optimizer_states(apply_redo_output, optimizer, layer_to_optim_idx):
     """
     Reset the optimizer state variables for specific layers and indexes.
@@ -220,8 +230,6 @@ def reset_optimizer_states(apply_redo_output, optimizer, layer_to_optim_idx):
         inbound_layer = redo_info["inbound"]
         indexes = redo_info["indexes"]
 
-        # Assuming we are resetting the states for both weights and biases.
-        # You might need to adjust this depending on your needs.
         for param_type in ["weight", "bias"]:
             layer_key = f"{inbound_layer}.{param_type}"
             if layer_key in layer_to_optim_idx:
@@ -234,9 +242,9 @@ def reset_optimizer_states(apply_redo_output, optimizer, layer_to_optim_idx):
 
                     # For Adam optimizer
                     if "exp_avg" in state:
-                        state['exp_avg'].view(-1)[indexes] = 0.0
+                        state["exp_avg"].view(-1)[indexes] = 0.0
                     if "exp_avg_sq" in state:
-                        state['exp_avg_sq'].view(-1)[indexes] = 0.0
+                        state["exp_avg_sq"].view(-1)[indexes] = 0.0
 
 
 def _test_register():
