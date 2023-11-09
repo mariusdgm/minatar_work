@@ -7,6 +7,8 @@ import multiprocessing
 import traceback
 from typing import List, Dict, Tuple
 
+from liftoff import parse_opts
+
 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(proj_root)
 
@@ -192,7 +194,7 @@ def get_training_file_names(exp_folder_path: str, experiment_file_string: str) -
     }
 
 
-def run_training_experiment(config: Dict) -> True:
+def run(opts: Dict) -> True:
     """Start a training experiment using input configuration.
 
     Args:
@@ -203,6 +205,9 @@ def run_training_experiment(config: Dict) -> True:
     """
 
     try:
+    
+        config = vars(opts)
+ 
         seed_everything(config["seed"])
 
         path_experiments_outputs = config["path_experiments_outputs"]
@@ -287,86 +292,90 @@ def run_training_experiment(config: Dict) -> True:
         return error_info
 
 
+### old implementation for parallelization
+# def start_parallel_training_session(
+#     configs: List[Dict],
+#     restart_training_timestamp: str = None,
+#     processes: int = 8
+# ) -> None:
+#     """Function call to start multiple training sessions in parallel.
 
-def start_parallel_training_session(
-    configs: List[Dict],
-    restart_training_timestamp: str = None,
-    processes: int = 8
-) -> None:
-    """Function call to start multiple training sessions in parallel.
-
-    Args:
-        configs (List[Dict]): list with the configurations to be used in the experiments.
-        restart_training_timestamp (str, optional): Datetime string that represents the folder name of a previous output.
-                                                    Defaults to None.
-        processes (int, optional): How many parallel processes to start. Defaults to 8.
-    """
+#     Args:
+#         configs (List[Dict]): list with the configurations to be used in the experiments.
+#         restart_training_timestamp (str, optional): Datetime string that represents the folder name of a previous output.
+#                                                     Defaults to None.
+#         processes (int, optional): How many parallel processes to start. Defaults to 8.
+#     """
     
-    # add this parameter to every training config so that we group them in the same training session.
-    current_timestamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
-    for conf in configs:
-        conf["experiment_start_timestamp"] = current_timestamp
+#     # add this parameter to every training config so that we group them in the same training session.
+#     current_timestamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
+#     for conf in configs:
+#         conf["experiment_start_timestamp"] = current_timestamp
 
-    if restart_training_timestamp:
-        for conf in configs:
-            conf["restart_training_timestamp"] = restart_training_timestamp
+#     if restart_training_timestamp:
+#         for conf in configs:
+#             conf["restart_training_timestamp"] = restart_training_timestamp
 
-    with multiprocessing.Pool(processes=processes) as pool:
-        results = list(pool.map(run_training_experiment, configs))
+#     with multiprocessing.Pool(processes=processes) as pool:
+#         results = list(pool.map(run, configs))
 
-    for config, result in zip(configs, results):
-        if result is not True:
-            print(f"Error in config {config['experiment_name']}: {result}")
+#     for config, result in zip(configs, results):
+#         if result is not True:
+#             print(f"Error in config {config['experiment_name']}: {result}")
 
-    print("All parallel jobs completed.")
+#     print("All parallel jobs completed.")
 
-def start_single_training_session(
-    config: Dict,
-    restart_training_timestamp: str = None,
-) -> None:
-    """Function call to start multiple training sessions in parallel.
+# def start_single_training_session(
+#     config: Dict,
+#     restart_training_timestamp: str = None,
+# ) -> None:
+#     """Function call to start multiple training sessions in parallel.
 
-    Args:
-        configs (Dict): list with the configurations to be used in the experiments.
-        restart_training_timestamp (str, optional): Datetime string that represents the folder name of a previous output.
-                                                    Defaults to None.
-        processes (int, optional): How many parallel processes to start. Defaults to 8.
-    """
+#     Args:
+#         configs (Dict): list with the configurations to be used in the experiments.
+#         restart_training_timestamp (str, optional): Datetime string that represents the folder name of a previous output.
+#                                                     Defaults to None.
+#         processes (int, optional): How many parallel processes to start. Defaults to 8.
+#     """
     
-    # add this parameter to every training config so that we group them in the same training session.
-    current_timestamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
-    config["experiment_start_timestamp"] = current_timestamp
+#     # add this parameter to every training config so that we group them in the same training session.
+#     current_timestamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
+#     config["experiment_start_timestamp"] = current_timestamp
 
-    if restart_training_timestamp:
-        config["restart_training_timestamp"] = restart_training_timestamp
+#     if restart_training_timestamp:
+#         config["restart_training_timestamp"] = restart_training_timestamp
 
-    run_training_experiment(config)
+#     run(config)
 
+# def main():
 
-def main():
+#     seed_everything(0)
 
-    seed_everything(0)
+#     file_dir = os.path.dirname(os.path.abspath(__file__))
+#     path_experiments_configs = os.path.join(file_dir, "training_configs")
+#     path_experiments_outputs = os.path.join(file_dir, "outputs")
 
-    file_dir = os.path.dirname(os.path.abspath(__file__))
-    path_experiments_configs = os.path.join(file_dir, "training_configs")
-    path_experiments_outputs = os.path.join(file_dir, "outputs")
-
-    default_config_path, experiment_config_paths = get_config_paths(
-        path_experiments_configs
-    )
+#     default_config_path, experiment_config_paths = get_config_paths(
+#         path_experiments_configs
+#     )
   
-    experiment_configs = read_config_files(default_config_path, experiment_config_paths)
+#     experiment_configs = read_config_files(default_config_path, experiment_config_paths)
 
-    runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
+#     runs_configs = generate_run_configs(experiment_configs, path_experiments_outputs)
 
-    start_parallel_training_session(
-        runs_configs
-    )
+#     start_parallel_training_session(
+#         runs_configs
+#     )
 
-    # print(runs_configs[1])
-    # start_single_training_session(runs_configs[1])
+#     # print(runs_configs[1])
+#     # start_single_training_session(runs_configs[1])
 
-    my_logging.cleanup_file_handlers()
+#     my_logging.cleanup_file_handlers()
+
+### Liftoff implementation
+def main():
+    opts = parse_opts()
+    run(opts)
 
 
 if __name__ == "__main__":

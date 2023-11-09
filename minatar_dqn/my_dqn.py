@@ -587,7 +587,6 @@ class AgentDQN:
                 ep_target_trained_times,
                 ep_losses,
                 ep_max_qs,
-                ep_reward_contor,
             ) = self.train_episode(epoch_t, self.train_step_cnt)
 
             policy_trained_times += ep_policy_trained_times
@@ -600,8 +599,6 @@ class AgentDQN:
                 epoch_episode_nr_frames.append(ep_frames)
                 epoch_losses.extend(ep_losses)
                 epoch_max_qs.extend(ep_max_qs)
-
-                
 
                 self.episodes += 1
                 self.reset_training_episode_tracker()
@@ -669,6 +666,7 @@ class AgentDQN:
                     self.policy_model_update_counter += 1
                     policy_trained_times += 1
 
+                # Reset policy network with redo if enabled
                 if self.redo_attach and self.redo_reinit:
                     if self.t % self.redo_freq == 0 and self.t > self.replay_start_size:
                         reset_details = self.policy_model.apply_redo()
@@ -818,7 +816,6 @@ class AgentDQN:
                 current_episode_reward,
                 ep_frames,
                 ep_max_qs,
-                ep_reward_contor,
             ) = self.validate_episode()
 
             valiation_t += ep_frames
@@ -881,7 +878,6 @@ class AgentDQN:
         current_episode_reward = 0.0
         ep_frames = 0
         max_qs = []
-        ep_reward_contor = {}
 
         # Initialize the environment and start state
         s, info = self.validation_env.reset()
@@ -897,11 +893,6 @@ class AgentDQN:
             )
             s_prime = torch.tensor(s_prime, device=device).float()
 
-            if reward in ep_reward_contor:
-                ep_reward_contor[reward] += 1
-            else:
-                ep_reward_contor[reward] = 1
-
             max_qs.append(max_q)
 
             current_episode_reward += reward
@@ -911,7 +902,7 @@ class AgentDQN:
             # Continue the process
             s = s_prime
 
-        return (current_episode_reward, ep_frames, max_qs, ep_reward_contor)
+        return (current_episode_reward, ep_frames, max_qs)
 
     def display_validation_epoch_info(self, stats):
         self.logger.info(

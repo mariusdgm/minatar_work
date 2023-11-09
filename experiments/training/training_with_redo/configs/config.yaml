@@ -1,0 +1,9 @@
+environment: [breakout, asterix]
+
+agent_params:
+  args_:
+    target_model_update_freq: [100, 1_000]
+
+redo:
+  tau: [0.01, 0.025, 0.05]
+  redo_freq: [500, 1_000]
