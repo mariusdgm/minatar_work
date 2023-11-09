@@ -1,0 +1,59 @@
+agent_params:
+  agent: AgentDQN
+  args_:
+    batch_size: 32
+    epsilon:
+      decay: 250000
+      end: 0.01
+      start: 1.0
+    gamma: 0.99
+    loss_fcn: mse_loss
+    replay_start_size: 5000
+    target_model_update_freq: 100
+    train_step_cnt: 200000
+    training_freq: 4
+    validation_enabled: true
+    validation_epsilon: 0.001
+    validation_step_cnt: 125000
+cfg_id: 17
+environment: asterix
+epochs_to_train: 20
+estimator:
+  args_:
+    conv_hidden_out_size: 32
+    lin_hidden_out_size: 128
+  model: Conv_QNET
+experiment: redo_experiment
+experiment_arguments:
+  agent_params:
+    args_:
+      target_model_update_freq: 100
+  environment: asterix
+  redo:
+    redo_freq: 1000
+    tau: 0.025
+full_title: 2023Nov09-084027_configs_redo.redo_freq=1000; redo.tau=0.025; agent_params.args_.target_model_update_freq=100;
+  environment=asterix
+optim:
+  args_:
+    eps: 0.00015
+    lr: 6.25e-05
+  name: Adam
+out_dir: ./results\2023Nov09-084027_configs/0017_redo.redo_freq_1000__redo.tau_0.025__agent_params.args_.target_model_update_freq_100__environment_asterix\0
+redo:
+  attach: true
+  beta: 1
+  enabled: false
+  redo_freq: 1000
+  selection_option: null
+  tau: 0.025
+replay_buffer:
+  action_dim: 1
+  max_size: 100000
+  n_step: 0
+reward_perception: null
+run_id: 0
+seed:
+- 0
+title: redo.redo_freq=1000; redo.tau=0.025; agent_params.args_.target_model_update_freq=100;
+  environment=asterix

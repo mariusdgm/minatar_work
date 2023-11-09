@@ -12,4 +12,4 @@ paths are sometimes with /, sometimes with \ ?
 
 
 
-liftoff training_with_redo.py 2023Nov08-233625_configs --procs-no 4
+liftoff training_with_redo.py results/2023Nov09-084027_configs --procs-no 4
