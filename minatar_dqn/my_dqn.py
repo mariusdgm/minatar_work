@@ -95,6 +95,8 @@ class AgentDQN:
             )
             if enable_tensorboard_logging:
                 tensor_logs_path = os.path.join(experiment_output_folder, "tb_logs")
+                # if not os.path.exists(tensor_logs_path):
+                #     os.makedirs(tensor_logs_path)
                 self.tensor_board_writer = SummaryWriter(log_dir=tensor_logs_path)
 
         self._load_config_settings(config)
@@ -178,7 +180,7 @@ class AgentDQN:
         Load the settings from config.
         If config was not provided, then default values are used.
         """
-        agent_params = config.get("agent_params", {}).get("args_", {})
+        agent_params = config.get("agent_params", {}).get("args", {})
 
         # setup training configuration
         self.train_step_cnt = agent_params.get("train_step_cnt", 200_000)
@@ -270,7 +272,7 @@ class AgentDQN:
                         know to instantiate.
         """
         estimator_settings = config.get(
-            "estimator", {"model": "Conv_QNET", "args_": {}}
+            "estimator", {"model": "Conv_QNET", "args": {}}
         )
 
         if estimator_settings["model"] == "Conv_QNET":
@@ -278,34 +280,34 @@ class AgentDQN:
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args_"],
+                **estimator_settings["args"],
             )
             self.target_model = Conv_QNET(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args_"],
+                **estimator_settings["args"],
             )
         elif estimator_settings["model"] == "Conv_QNET_one":
             self.policy_model = Conv_QNET_one(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args_"],
+                **estimator_settings["args"],
             )
             self.target_model = Conv_QNET_one(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args_"],
+                **estimator_settings["args"],
             )
         else:
             estiamtor_name = estimator_settings["model"]
             raise ValueError(f"Could not setup estimator. Tried with: {estiamtor_name}")
 
-        optimizer_settings = config.get("optim", {"name": "Adam", "args_": {}})
+        optimizer_settings = config.get("optim", {"name": "Adam", "args": {}})
         self.optimizer = optim.Adam(
-            self.policy_model.parameters(), **optimizer_settings["args_"]
+            self.policy_model.parameters(), **optimizer_settings["args"]
         )
 
         self.logger.info("Initialized newtworks and optimizer.")
@@ -575,7 +577,6 @@ class AgentDQN:
         epoch_losses = []
         epoch_max_qs = []
 
-
         start_time = datetime.datetime.now()
         while epoch_t < self.train_step_cnt:
             (
@@ -615,10 +616,9 @@ class AgentDQN:
             epoch_max_qs,
             epoch_time,
         )
-        
+
         # Compute redo stats if enabled
-        
-        
+
         return epoch_stats
 
     def train_episode(self, epoch_t: int, train_frames: int):
@@ -823,7 +823,6 @@ class AgentDQN:
             epoch_episode_rewards.append(current_episode_reward)
             epoch_episode_nr_frames.append(ep_frames)
             epoch_max_qs.extend(ep_max_qs)
-
 
         end_time = datetime.datetime.now()
         epoch_time = end_time - start_time

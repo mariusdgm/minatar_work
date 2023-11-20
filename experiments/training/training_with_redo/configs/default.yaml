@@ -1,7 +1,7 @@
 experiment: "redo_experiment"
 
 epochs_to_train: 20
-seed: [0]
+seed: 0
 environment: [breakout, space_invaders, asterix]
 
 agent_params:

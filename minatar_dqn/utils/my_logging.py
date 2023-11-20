@@ -2,9 +2,10 @@ import os
 import sys
 
 import logging
-import datetime
+from logging.handlers import RotatingFileHandler
 
-def setup_logger(env_name="default_game", folder_path=None, identifier_string=None):
+
+def setup_logger(name, log_file=None):
     """
     Create and return a customized logger.
 
@@ -17,37 +18,24 @@ def setup_logger(env_name="default_game", folder_path=None, identifier_string=No
         Logger: customized logger instance.
     """
     level = logging.DEBUG
-    logger = logging.getLogger()
+    logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    if identifier_string is None:
-        formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-    else:
-        formatter = logging.Formatter(
-                f"%(asctime)s - %(name)s - %(levelname)s - {identifier_string} - %(message)s"
-            )
+    formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+    
+    # Create a console handler
+    console_handler = logging.StreamHandler(stream=sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
-    stdout_handler_exists = False
-    for handler in logging.getLogger().handlers:
-        if hasattr(handler, 'stream') and handler.stream == sys.stdout:
-            stdout_handler_exists = True
-
-    # If no handler exists, add one that writes to sys.stdout
-    if not stdout_handler_exists:
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(level)
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-
-    # create file handler
-    if folder_path:
-        time_stamp = datetime.datetime.now().strftime(r"%Y_%m_%d-%H_%M_%S")
-        log_file_name = f"{env_name}_{time_stamp}"
-        log_file_path = os.path.join(folder_path, log_file_name)
-        file_handler = logging.FileHandler(log_file_path)
-        file_handler.setLevel(level)
+    # If a log file path is provided, set up file handler
+    if log_file is not None:
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=1024 * 1024 * 5, backupCount=3
+        )  # 5MB per file, with 3 backups
+       
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 

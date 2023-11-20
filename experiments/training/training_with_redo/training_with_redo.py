@@ -25,8 +25,18 @@ from liftoff import parse_opts
 from minatar_dqn.utils import my_logging
 from minatar_dqn import my_dqn
 from experiments.experiment_utils import seed_everything
+from experiments.training.training import create_path_to_experiment_folder
 
 # os.environ["OMP_NUM_THREADS"] = "2"
+
+
+def convert_namespace_to_dict(obj):
+    if isinstance(obj, dict):
+        return {k: convert_namespace_to_dict(v) for k, v in obj.items()}
+    elif hasattr(obj, "__dict__"):
+        return {k: convert_namespace_to_dict(v) for k, v in obj.__dict__.items()}
+    else:
+        return obj
 
 
 def run(opts: Dict) -> True:
@@ -40,64 +50,57 @@ def run(opts: Dict) -> True:
     """
 
     try:
+        config = convert_namespace_to_dict(opts)
+        seed = int(os.path.basename(config["out_dir"]))
 
-        config = vars(opts)
-        
-        seed_everything(config["seed"])
+        seed_everything(seed)
 
-        logs_folder = os.path.join(config["out_dir"], "logs")
-        Path(logs_folder).mkdir(parents=True, exist_ok=True)
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        absolute_out_dir = os.path.join(script_dir, config["out_dir"].strip(".\\"))
 
-        env_name = config["environment"]
+        logs_file = os.path.join(config["out_dir"], "experiment_log.log")
+
         logger = my_logging.setup_logger(
-            env_name=env_name,
-            folder_path=logs_folder,
-            identifier_string=config["title"],
-        )
-        logger.info(
-            f'Starting up experiment: {config["title"]}, environment: {config["environment"]}, seed: {config["seed"]}'
+            name=config["experiment"],
+            log_file=logs_file,
         )
 
-        # ### Setup environments ###
-        # train_env = my_dqn.build_environment(
-        #     game_name=config["environment"], random_seed=config["seed"]
-        # )
-        # validation_env = my_dqn.build_environment(
-        #     game_name=config["environment"], random_seed=config["seed"]
-        # )
+        logger.info(f"Config: {config}")
 
-        # ### Setup output and loading paths ###
+        ### Setup environments ###
+        train_env = my_dqn.build_environment(
+            game_name=config["environment"], random_seed=seed
+        )
+        validation_env = my_dqn.build_environment(
+            game_name=config["environment"], random_seed=seed
+        )
 
-        # path_previous_experiments_outputs = None
-        # if "restart_training_timestamp" in config:
-        #     path_previous_experiments_outputs = create_path_to_experiment_folder(
-        #         config,
-        #         path_experiments_outputs,
-        #         config["restart_training_timestamp"],
-        #     )
+        ### Setup output and loading paths ###
 
-        # config["experiment_output_folder"] = exp_folder_path
-        # config["full_experiment_name"] = experiment_file_string
+        path_previous_experiments_outputs = None
+        if "restart_training_timestamp" in config:
+            path_previous_experiments_outputs = create_path_to_experiment_folder(
+                config,
+                config["out_dir"],
+                config["restart_training_timestamp"],
+            )
 
-        # config_to_record = os.path.join(exp_folder_path, f"{experiment_file_string}_config")
-        # with open(config_to_record, "w") as file:
-        #     yaml.dump(config, file)
+        experiment_agent = my_dqn.AgentDQN(
+            train_env=train_env,
+            validation_env=validation_env,
+            experiment_output_folder=absolute_out_dir,
+            experiment_name=config["experiment"],
+            resume_training_path=path_previous_experiments_outputs,
+            save_checkpoints=True,
+            logger=logger,
+            config=config,
+            enable_tensorboard_logging=True,
+        )
 
-        # experiment_agent = my_dqn.AgentDQN(
-        #     train_env=train_env,
-        #     validation_env=validation_env,
-        #     experiment_output_folder=exp_folder_path,
-        #     experiment_name=experiment_file_string,
-        #     resume_training_path=path_previous_experiments_outputs,
-        #     save_checkpoints=True,
-        #     logger=logger,
-        #     config=config,
-        # )
-
-        # experiment_agent.train(train_epochs=config["epochs_to_train"])
+        experiment_agent.train(train_epochs=config["epochs_to_train"])
 
         logger.info(
-            f'Finished training experiment: {config["experiment_name"]}, environment: {config["environment"]}, seed: {config["seed"]}'
+            f'Finished training experiment: {config["full_title"]}, seed: {config["seed"]}'
         )
 
         my_logging.cleanup_file_handlers(experiment_logger=logger)
@@ -109,8 +112,7 @@ def run(opts: Dict) -> True:
         error_info = traceback.format_exc()
 
         # Log this information using your logger, if it's available
-        if 'logger' in locals():
-            logger.error("An error occurred: %s", error_info)
+        logger.error("An error occurred: %s", error_info)
 
         # Return the error info so it can be collected by the parent process
         return error_info
