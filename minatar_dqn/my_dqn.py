@@ -95,9 +95,9 @@ class AgentDQN:
             )
             if enable_tensorboard_logging:
                 tensor_logs_path = os.path.join(experiment_output_folder, "tb_logs")
-                # if not os.path.exists(tensor_logs_path):
-                #     os.makedirs(tensor_logs_path)
-                self.tensor_board_writer = SummaryWriter(log_dir=tensor_logs_path)
+                self.tensor_board_writer = SummaryWriter(
+                    os.path.abspath(tensor_logs_path)
+                )
 
         self._load_config_settings(config)
 
@@ -271,9 +271,7 @@ class AgentDQN:
             ValueError: The configuration contains an estimator name that the agent does not
                         know to instantiate.
         """
-        estimator_settings = config.get(
-            "estimator", {"model": "Conv_QNET", "args": {}}
-        )
+        estimator_settings = config.get("estimator", {"model": "Conv_QNET", "args": {}})
 
         if estimator_settings["model"] == "Conv_QNET":
             self.policy_model = Conv_QNET(
@@ -553,7 +551,8 @@ class AgentDQN:
             self.logger.info(f"Epoch {epoch} completed in {epoch_time}")
             self.logger.info("\n")
 
-        self.tensor_board_writer.close()
+        if self.tensor_board_writer:
+            self.tensor_board_writer.close()
 
         self.logger.info(
             f"Ended training session after {train_epochs} epochs at t = {self.t}"

@@ -55,9 +55,6 @@ def run(opts: Dict) -> True:
 
         seed_everything(seed)
 
-        script_dir = os.path.dirname(os.path.realpath(__file__))
-        absolute_out_dir = os.path.join(script_dir, config["out_dir"].strip(".\\"))
-
         logs_file = os.path.join(config["out_dir"], "experiment_log.log")
 
         logger = my_logging.setup_logger(
@@ -88,13 +85,13 @@ def run(opts: Dict) -> True:
         experiment_agent = my_dqn.AgentDQN(
             train_env=train_env,
             validation_env=validation_env,
-            experiment_output_folder=absolute_out_dir,
+            experiment_output_folder=config["out_dir"],
             experiment_name=config["experiment"],
             resume_training_path=path_previous_experiments_outputs,
             save_checkpoints=True,
             logger=logger,
             config=config,
-            enable_tensorboard_logging=True,
+            enable_tensorboard_logging=False,
         )
 
         experiment_agent.train(train_epochs=config["epochs_to_train"])
