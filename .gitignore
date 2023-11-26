@@ -4,5 +4,7 @@ experiments/pruning/outputs
 experiments/pruning/imgs
 experiments/redo
 experiments/training/training_with_redo/results
+experiments/training/training_without_redo/results
+
 notebooks/imgs
 

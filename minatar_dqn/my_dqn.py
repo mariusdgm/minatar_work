@@ -180,7 +180,7 @@ class AgentDQN:
         Load the settings from config.
         If config was not provided, then default values are used.
         """
-        agent_params = config.get("agent_params", {}).get("args", {})
+        agent_params = config.get("agent_params", {}).get("args_", {})
 
         # setup training configuration
         self.train_step_cnt = agent_params.get("train_step_cnt", 200_000)
@@ -271,41 +271,41 @@ class AgentDQN:
             ValueError: The configuration contains an estimator name that the agent does not
                         know to instantiate.
         """
-        estimator_settings = config.get("estimator", {"model": "Conv_QNET", "args": {}})
+        estimator_settings = config.get("estimator", {"model": "Conv_QNET", "args_": {}})
 
         if estimator_settings["model"] == "Conv_QNET":
             self.policy_model = Conv_QNET(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args"],
+                **estimator_settings["args_"],
             )
             self.target_model = Conv_QNET(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args"],
+                **estimator_settings["args_"],
             )
         elif estimator_settings["model"] == "Conv_QNET_one":
             self.policy_model = Conv_QNET_one(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args"],
+                **estimator_settings["args_"],
             )
             self.target_model = Conv_QNET_one(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args"],
+                **estimator_settings["args_"],
             )
         else:
             estiamtor_name = estimator_settings["model"]
             raise ValueError(f"Could not setup estimator. Tried with: {estiamtor_name}")
 
-        optimizer_settings = config.get("optim", {"name": "Adam", "args": {}})
+        optimizer_settings = config.get("optim", {"name": "Adam", "args_": {}})
         self.optimizer = optim.Adam(
-            self.policy_model.parameters(), **optimizer_settings["args"]
+            self.policy_model.parameters(), **optimizer_settings["args_"]
         )
 
         self.logger.info("Initialized newtworks and optimizer.")

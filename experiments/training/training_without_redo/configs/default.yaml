@@ -43,8 +43,8 @@ replay_buffer:
   n_step: 0
 
 redo:
-  attach: True
-  enabled: True
+  attach: False
+  enabled: False
   tau: 0.1
   beta: 1
   redo_freq: 1_000
