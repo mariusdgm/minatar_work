@@ -93,6 +93,10 @@ def run(opts: Dict) -> True:
             config=config,
             enable_tensorboard_logging=False,
         )
+        
+        logger.info(
+            f'Initialized agent with models: {experiment_agent.policy_model}'
+        )
 
         experiment_agent.train(train_epochs=config["epochs_to_train"])
 

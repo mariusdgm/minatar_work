@@ -1,8 +1,10 @@
-environment: [breakout, asterix]
+environment: [breakout]
 
-agent_params:
+estimator:
   args_:
-    target_model_update_freq: [100, 1_000]
+    conv_hidden_out_size: [16, 32]
+    lin_hidden_out_size: [64, 128]
 
-redo:
-  attach: [False, True]
+liftoff:
+  - vars: [estimator.args_.conv_hidden_out_size, estimator.args_.lin_hidden_out_size]
+    "!!": [[16, 128], [32, 64]]
