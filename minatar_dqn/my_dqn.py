@@ -17,7 +17,7 @@ import gym
 from minatar_dqn.replay_buffer import ReplayBuffer
 from experiments.experiment_utils import seed_everything
 from minatar_dqn.utils.my_logging import setup_logger
-from minatar_dqn.utils.generic import merge_dictionaries
+from minatar_dqn.utils.generic import merge_dictionaries, replace_keys
 from minatar_dqn.models import Conv_QNET, Conv_QNET_one
 from minatar_dqn.minatar_gym_wrappers import PermuteMinatarObsSpace
 
@@ -99,9 +99,12 @@ class AgentDQN:
                     os.path.abspath(tensor_logs_path)
                 )
 
-        self._load_config_settings(config)
+        self.config = config
+        if self.config:
+            self.config = replace_keys(self.config, "args_", "args")
 
-        self._init_models(config)  # init policy, target and optim
+        self._load_config_settings(self.config)
+        self._init_models(self.config)  # init policy, target and optim
 
         # Set initial values related to training and monitoring
         self.t = 0  # frame nr
@@ -180,7 +183,7 @@ class AgentDQN:
         Load the settings from config.
         If config was not provided, then default values are used.
         """
-        agent_params = config.get("agent_params", {}).get("args_", {})
+        agent_params = config.get("agent_params", {}).get("args", {})
 
         # setup training configuration
         self.train_step_cnt = agent_params.get("train_step_cnt", 200_000)
@@ -271,41 +274,41 @@ class AgentDQN:
             ValueError: The configuration contains an estimator name that the agent does not
                         know to instantiate.
         """
-        estimator_settings = config.get("estimator", {"model": "Conv_QNET", "args_": {}})
+        estimator_settings = config.get("estimator", {"model": "Conv_QNET", "args": {}})
 
         if estimator_settings["model"] == "Conv_QNET":
             self.policy_model = Conv_QNET(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args_"],
+                **estimator_settings["args"],
             )
             self.target_model = Conv_QNET(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args_"],
+                **estimator_settings["args"],
             )
         elif estimator_settings["model"] == "Conv_QNET_one":
             self.policy_model = Conv_QNET_one(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args_"],
+                **estimator_settings["args"],
             )
             self.target_model = Conv_QNET_one(
                 self.in_features,
                 self.in_channels,
                 self.num_actions,
-                **estimator_settings["args_"],
+                **estimator_settings["args"],
             )
         else:
             estiamtor_name = estimator_settings["model"]
             raise ValueError(f"Could not setup estimator. Tried with: {estiamtor_name}")
 
-        optimizer_settings = config.get("optim", {"name": "Adam", "args_": {}})
+        optimizer_settings = config.get("optim", {"name": "Adam", "args": {}})
         self.optimizer = optim.Adam(
-            self.policy_model.parameters(), **optimizer_settings["args_"]
+            self.policy_model.parameters(), **optimizer_settings["args"]
         )
 
         self.logger.info("Initialized newtworks and optimizer.")
