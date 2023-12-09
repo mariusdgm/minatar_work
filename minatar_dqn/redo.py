@@ -22,7 +22,7 @@ class ReDo:
         self.module = module
         self.inbound = inbound
         self.outbound = outbound
-        self.tau = tau
+        self.tau = tau 
         self.beta = beta
         self.running_avg = None
         self.selection_option = selection_option
@@ -31,7 +31,7 @@ class ReDo:
         """Keep a running average of abs(activation)"""
         dims = [0] if output.ndim == 2 else [0, -2, -1]
         x = output.detach().abs().mean(dim=dims)
-        m.running_avg = (1 - self.beta) * m.running_avg + self.beta * x
+        m.running_avg = (1 - self.beta) * m.running_avg + self.beta * x 
         m.running_avg_cnt = m.running_avg_cnt + 1
 
     def get_score(self):
@@ -43,7 +43,9 @@ class ReDo:
         nn.Linear and nn.Conv2d layers.
         """
         score = self.get_score()
-        idxs = (score <= self.tau).nonzero().flatten()
+        tau = self.tau / len(score)
+        idxs = (score <= tau).nonzero().flatten()
+        
 
         if self.selection_option in ["intersect", "union"]:
             smallest_weights_idx = torch.argsort(
@@ -100,7 +102,8 @@ class ReDo:
     def get_ratio(self):
         """Return fraction of dormant neurons."""
         score = self.get_score()
-        mask = score <= self.tau
+        tau = self.tau / len(score)
+        mask = score <= tau
         return mask.sum() / mask.nelement()
 
     def get_avg_running_avg(self):
