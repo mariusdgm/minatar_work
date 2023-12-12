@@ -1,6 +1,6 @@
 experiment: "redo_experiment"
 
-epochs_to_train: 20
+epochs_to_train: 75
 environment: [breakout, space_invaders, asterix]
 
 agent_params:
